@@ -13,6 +13,7 @@ import { TriggerPopup, type TriggerPopupState } from '../../extensions/triggerPo
 import { cleanBibValue, formatAuthorShort } from '../../citations/bibtex';
 import { searchZoteroLibrary } from '../../citations/zoteroService';
 import { indexPaperElements } from '../../utils/paperOutline';
+import { normalizeAcademicMarkdown } from '../../utils/normalizeAcademicMarkdown';
 import type { ZoteroSearchItem } from '../../types/citation';
 import { FrontMatterEditor } from '../FrontMatterEditor/FrontMatterEditor';
 import './Editor.css';
@@ -46,6 +47,7 @@ export function Editor() {
 
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastLoadedTargetRef = useRef<string>('');
+  const lastEmittedMarkdownRef = useRef<string>(activeMarkdown);
   const suppressUpdateRef = useRef(false);
 
   const [popup, setPopup] = useState<TriggerPopupState | null>(null);
@@ -94,7 +96,9 @@ export function Editor() {
       onUpdate: ({ editor: ed }) => {
         if (suppressUpdateRef.current) return;
         const store = usePaperStore.getState();
-        store.updateActiveMarkdown(ed.getMarkdown());
+        const cleanMd = normalizeAcademicMarkdown(ed.getMarkdown());
+        lastEmittedMarkdownRef.current = cleanMd;
+        store.updateActiveMarkdown(cleanMd);
 
         if (store.autoSaveEnabled && store.projectPath) {
           if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
@@ -119,12 +123,15 @@ export function Editor() {
     };
   }, [editor]);
 
-  // Reload content when switching sections or restoring a snapshot
+  // Reload content when switching sections or restoring a snapshot/backup
   useEffect(() => {
     if (!editor || activeTarget === 'frontmatter') return;
-    const currentInEditor = editor.getMarkdown();
-    if (lastLoadedTargetRef.current !== activeTarget || currentInEditor !== activeMarkdown) {
+    if (
+      lastLoadedTargetRef.current !== activeTarget ||
+      activeMarkdown !== lastEmittedMarkdownRef.current
+    ) {
       lastLoadedTargetRef.current = activeTarget;
+      lastEmittedMarkdownRef.current = activeMarkdown;
       suppressUpdateRef.current = true;
       editor.commands.setContent(activeMarkdown, { contentType: 'markdown' });
       suppressUpdateRef.current = false;

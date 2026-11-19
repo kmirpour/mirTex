@@ -87,6 +87,24 @@ Table: Performance summary {#tbl:perf}
     expect(res.latex).toContain('\\toprule');
     expect(res.latex).toContain('\\textbf{MirTexNet}');
   });
+
+  it('handles TipTap-escaped underscores and brackets in citations, cross-refs, and math', () => {
+    // Exact string shape serialized by @tiptap/markdown when user types [@Chilukuri_2026] and @Mirpour_2024
+    const tiptapEscapedMd =
+      'Introduce the background, open scientific \\[@Chilukuri\\_2026\\] problem, and key hypotheses @Mirpour\\_2024 or contributions of this work. See @fig:my\\_plot and $E = \\\\alpha\\_1 + \\\\beta\\_2$.';
+
+    const res = markdownToLatex(tiptapEscapedMd, {
+      citationDialect: 'natbib',
+      stripTopH1: true,
+    });
+
+    expect(res.citedKeys).toEqual(['Chilukuri_2026', 'Mirpour_2024']);
+    expect(res.latex).toContain('\\citep{Chilukuri_2026}');
+    expect(res.latex).toContain('\\citet{Mirpour_2024}');
+    expect(res.latex).toContain('Fig.~\\ref{fig:my_plot}');
+    expect(res.latex).toContain('$E = \\alpha_1 + \\beta_2$');
+    expect(res.latex).not.toContain('\\textbackslash{}');
+  });
 });
 
 describe('Non-Destructive Template Patcher (Springer Nature sn-jnl)', () => {

@@ -1,4 +1,5 @@
 import type { CitationDialect } from '../types/latex';
+import { normalizeAcademicMarkdown } from '../utils/normalizeAcademicMarkdown';
 
 export interface TranspileOptions {
   citationDialect: CitationDialect;
@@ -62,7 +63,8 @@ export function markdownToLatex(markdown: string, opts: TranspileOptions): Trans
   let usesMath = false;
   const citedKeysSet = new Set<string>();
 
-  const lines = markdown.replace(/\r\n/g, '\n').split('\n');
+  const normalized = normalizeAcademicMarkdown(markdown);
+  const lines = normalized.split('\n');
   const out: string[] = [];
 
   let i = 0;
@@ -455,7 +457,10 @@ function transpileInline(
     return stash(`\\href{${url}}{${escapeLatexText(label)}}`);
   });
 
-  // 7. Escape all remaining plain LaTeX special characters
+  // 7. Protect literal escaped asterisks `\*`, unescape CommonMark punctuation escapes
+  //    produced by TipTap's Markdown serializer, then escape plain prose for LaTeX
+  working = working.replace(/\\\*/g, () => stash('*'));
+  working = working.replace(/\\([\\`_[\]~{}#&%$^!])/g, '$1');
   working = escapeLatexText(working);
 
   // 8. Bold + Italic, Bold, Italic, Underline, Superscript, Subscript

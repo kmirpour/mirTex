@@ -1,4 +1,5 @@
 import type { BibEntry, CitationAuditReport } from '../types/citation';
+import { normalizeAcademicMarkdown } from '../utils/normalizeAcademicMarkdown';
 
 /** Strips outer braces and decodes common LaTeX accents for clean UI display. */
 export function cleanBibValue(raw: string): string {
@@ -196,13 +197,14 @@ export function mergeBibEntries(existing: BibEntry[], incoming: BibEntry[]): {
 /** Returns only entries whose keys are actually cited in the manuscript (for clean export). */
 export function pruneBibEntries(entries: BibEntry[], citedKeys: string[]): BibEntry[] {
   if (citedKeys.length === 0) return entries;
-  const set = new Set(citedKeys);
-  const pruned = entries.filter((e) => set.has(e.key));
+  const set = new Set(citedKeys.map((k) => k.toLowerCase()));
+  const pruned = entries.filter((e) => set.has(e.key.toLowerCase()));
   return pruned.length > 0 ? pruned : entries;
 }
 
 /** Extracts all cited keys in order of appearance from Markdown text. */
-export function extractCitedKeysFromMarkdown(markdown: string): string[] {
+export function extractCitedKeysFromMarkdown(rawMarkdown: string): string[] {
+  const markdown = normalizeAcademicMarkdown(rawMarkdown);
   const keys: string[] = [];
 
   // 1. Bracketed citations: [@a; @b]
@@ -235,16 +237,17 @@ export function extractCitedKeysFromMarkdown(markdown: string): string[] {
 
 /** Audits every citation across all paper sections against the BibTeX library. */
 export function auditCitations(sectionMarkdowns: string[], entries: BibEntry[]): CitationAuditReport {
+  const entryByLower = new Map(entries.map((e) => [e.key.toLowerCase(), e]));
   const usageCounts: Record<string, number> = {};
   for (const md of sectionMarkdowns) {
-    for (const key of extractCitedKeysFromMarkdown(md)) {
-      usageCounts[key] = (usageCounts[key] || 0) + 1;
+    for (const rawKey of extractCitedKeysFromMarkdown(md)) {
+      const canonical = entryByLower.get(rawKey.toLowerCase())?.key ?? rawKey;
+      usageCounts[canonical] = (usageCounts[canonical] || 0) + 1;
     }
   }
 
-  const entryMap = new Map(entries.map((e) => [e.key, e]));
   const citedKeys = Object.keys(usageCounts);
-  const missingKeys = citedKeys.filter((k) => !entryMap.has(k));
+  const missingKeys = citedKeys.filter((k) => !entryByLower.has(k.toLowerCase()));
   const unusedKeys = entries.map((e) => e.key).filter((k) => !usageCounts[k]);
 
   const incompleteEntries: { key: string; missingFields: string[] }[] = [];

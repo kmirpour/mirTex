@@ -3,6 +3,7 @@ import type { BibEntry, CitationStyle } from '../types/citation';
 import type { PaperFrontMatter, PaperSection } from '../types/paper';
 import { extractCitedKeysFromMarkdown } from '../citations/bibtex';
 import { buildBibliographyOrder, formatInlineCitation } from '../citations/cslFormatter';
+import { normalizeAcademicMarkdown } from '../utils/normalizeAcademicMarkdown';
 
 /**
  * Exports the manuscript as a clean Academic Microsoft Word (.docx) document
@@ -82,8 +83,8 @@ export async function buildAcademicDocx(params: {
 
   // Body Sections
   for (const sec of sections) {
-    const rawMd = sectionContents[sec.id] ?? '';
-    const lines = rawMd.replace(/\r\n/g, '\n').split('\n');
+    const rawMd = normalizeAcademicMarkdown(sectionContents[sec.id] ?? '');
+    const lines = rawMd.split('\n');
     let headingEmitted = false;
 
     for (const rawLine of lines) {

@@ -1,4 +1,5 @@
 import type { SubsectionHeading } from '../types/paper';
+import { normalizeAcademicMarkdown } from './normalizeAcademicMarkdown';
 
 export interface IndexedElement {
   kind: 'figure' | 'table' | 'equation' | 'section';
@@ -64,7 +65,8 @@ export function indexPaperElements(
   let eqNum = 0;
   let secNum = 0;
 
-  for (const sec of sections) {
+  for (const rawSec of sections) {
+    const sec = { ...rawSec, markdown: normalizeAcademicMarkdown(rawSec.markdown) };
     secNum++;
     const secSlug = sec.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
     elements.push({

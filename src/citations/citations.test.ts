@@ -78,6 +78,32 @@ describe('BibTeX Parser, Serializer, Merger & Auditor', () => {
     const pruned = pruneBibEntries(entries, keys);
     expect(pruned.map((e) => e.key)).toEqual(['vaswani2017attention']);
   });
+
+  it('extracts and prunes underscore citation keys serialized by TipTap markdown', () => {
+    const entries = parseBibTeX(`
+      @article{Chilukuri_2026,
+        author = {Chilukuri, A.},
+        title = {Paper One},
+        journal = {Nature},
+        year = {2026}
+      }
+      @article{Mirpour_2024,
+        author = {Mirpour, K.},
+        title = {Paper Two},
+        journal = {Neuron},
+        year = {2024}
+      }
+    `);
+    const tiptapMd =
+      'Introduce the background, open scientific \\[@Chilukuri\\_2026\\] problem, and key hypotheses @Mirpour\\_2024.';
+    const keys = extractCitedKeysFromMarkdown(tiptapMd);
+    expect(keys).toEqual(['Chilukuri_2026', 'Mirpour_2024']);
+
+    const audit = auditCitations([tiptapMd], entries);
+    expect(audit.missingKeys).toEqual([]);
+    expect(audit.unusedKeys).toEqual([]);
+    expect(pruneBibEntries(entries, keys).map((e) => e.key)).toEqual(['Chilukuri_2026', 'Mirpour_2024']);
+  });
 });
 
 describe('CSL Citation Formatting', () => {

@@ -6,6 +6,7 @@ import type { PaperFrontMatter } from '../types/paper';
 import { extractCitedKeysFromMarkdown } from '../citations/bibtex';
 import { buildBibliographyOrder, formatInlineCitation } from '../citations/cslFormatter';
 import { indexPaperElements } from './paperOutline';
+import { normalizeAcademicMarkdown } from './normalizeAcademicMarkdown';
 
 function renderKatexSafe(tex: string, displayMode: boolean): string {
   try {
@@ -113,7 +114,7 @@ export function renderAcademicPreviewHtml(input: AcademicPreviewInput): string {
       return `MIRTEXHTMLTOKEN${idx}END`;
     };
 
-    let md = sec.markdown.replace(/\r\n/g, '\n');
+    let md = normalizeAcademicMarkdown(sec.markdown);
 
     // 1. Raw LaTeX fenced blocks -> styled preview block
     md = md.replace(/```(?:latex-raw|tex-raw|raw-latex)\n([\s\S]*?)```/gi, (_m, raw: string) =>
