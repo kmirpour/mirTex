@@ -4,6 +4,7 @@ import type { TemplateManifest } from '../types/latex';
 import type { PaperFrontMatter, PaperProject } from '../types/paper';
 import { pruneBibEntries, serializeBibLibrary } from '../citations/bibtex';
 import { patchLatexTemplate } from '../latex/templatePatcher';
+import { unicodeToLatexText } from '../latex/unicodeToLatex';
 import * as fileService from '../services/fileService';
 
 export interface AssembledLatexOutput {
@@ -65,7 +66,8 @@ export async function assembleLatexBuildDir(params: {
   const exportedEntries = pruneUnusedBib
     ? pruneBibEntries(bibEntries, patched.citedKeys)
     : bibEntries;
-  const bibSource = serializeBibLibrary(exportedEntries);
+  // Convert Greek/math Unicode inside exported BibTeX titles (e.g., α, β, μ, –) so pdfLaTeX compiles cleanly
+  const bibSource = unicodeToLatexText(serializeBibLibrary(exportedEntries));
 
   const buildDir = fileService.joinPath(projectPath, 'build');
   const entryName = fileService.extractFileName(manifest.entryFile || 'main.tex');

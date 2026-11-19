@@ -7,10 +7,11 @@ import { extractCitedKeysFromMarkdown } from '../citations/bibtex';
 import { buildBibliographyOrder, formatInlineCitation } from '../citations/cslFormatter';
 import { indexPaperElements } from './paperOutline';
 import { normalizeAcademicMarkdown } from './normalizeAcademicMarkdown';
+import { sanitizeLatexMath } from '../latex/unicodeToLatex';
 
 function renderKatexSafe(tex: string, displayMode: boolean): string {
   try {
-    return katex.renderToString(tex.trim(), {
+    return katex.renderToString(sanitizeLatexMath(tex.trim(), displayMode), {
       displayMode,
       throwOnError: false,
       strict: false,

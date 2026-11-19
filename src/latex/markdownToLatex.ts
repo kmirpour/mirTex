@@ -3,6 +3,7 @@ import {
   decodeBasicHtmlEntities,
   normalizeAcademicMarkdown,
 } from '../utils/normalizeAcademicMarkdown';
+import { sanitizeLatexMath, unicodeToLatexText } from './unicodeToLatex';
 
 export interface TranspileOptions {
   citationDialect: CitationDialect;
@@ -21,15 +22,16 @@ export interface TranspileResult {
   citedKeys: string[];
 }
 
-/** Escapes special LaTeX characters in plain prose (never call on math or emitted commands). */
+/** Escapes special LaTeX characters and converts Unicode symbols in plain prose (never call on math). */
 export function escapeLatexText(text: string): string {
-  return text
+  const escaped = text
     .replace(/\\/g, '\\textbackslash{}')
     .replace(/([&%$#_{}])/g, '\\$1')
     .replace(/</g, '\\textless{}')
     .replace(/>/g, '\\textgreater{}')
     .replace(/~/g, '\\textasciitilde{}')
     .replace(/\^/g, '\\textasciicircum{}');
+  return unicodeToLatexText(escaped);
 }
 
 function chooseCitationCmd(
@@ -153,10 +155,11 @@ export function markdownToLatex(markdown: string, opts: TranspileOptions): Trans
         mathBody = bodyLines.join('\n').trim();
       }
 
+      const cleanMath = sanitizeLatexMath(mathBody, true);
       if (label) {
-        out.push(`\\begin{equation}\n\\label{${label}}\n${mathBody}\n\\end{equation}`);
+        out.push(`\\begin{equation}\n\\label{${label}}\n${cleanMath}\n\\end{equation}`);
       } else {
-        out.push(`\\begin{equation}\n${mathBody}\n\\end{equation}`);
+        out.push(`\\begin{equation}\n${cleanMath}\n\\end{equation}`);
       }
       continue;
     }
@@ -397,7 +400,7 @@ function transpileInline(
   // 1. Inline math `$...$` (not `$$`)
   working = working.replace(/(?<!\\)\$(?!\$)([^$\n]+?)(?<!\\)\$/g, (_m, expr: string) => {
     onMath();
-    return stash(`$${expr}$`);
+    return stash(`$${sanitizeLatexMath(expr, false)}$`);
   });
 
   // 2. Inline code `` `...` ``

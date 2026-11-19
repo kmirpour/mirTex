@@ -131,6 +131,27 @@ Table: Performance summary {#tbl:perf}
     expect(previewHtml).not.toContain('katex-error');
     expect(previewHtml).not.toContain('&amp;lt;');
   });
+
+  it('escapes bare % inside inline/display math ($-67.8%$) and converts Unicode Greek/math symbols for pdfLaTeX & LuaLaTeX', () => {
+    const md =
+      'Median change was $-67.8%$ (also $−67.8\\%$) in β-band (13–30 Hz) and α/γ power at 10 μV with $α ≤ β ± 0.5$ and p ≥ 0.05.';
+
+    const res = markdownToLatex(md, { citationDialect: 'natbib' });
+    expect(res.latex).toContain('$-67.8\\%$');
+    expect(res.latex).toContain('$\\beta$-band (13--30 Hz)');
+    expect(res.latex).toContain('$\\alpha$/$\\gamma$ power at 10 $\\mu$V');
+    expect(res.latex).toContain('$\\alpha \\leq \\beta \\pm 0.5$');
+    expect(res.latex).toContain('p $\\geq$ 0.05');
+    // Must not double-escape already-escaped \%
+    expect(res.latex).not.toContain('\\\\%');
+
+    const previewHtml = renderAcademicPreviewHtml({
+      sections: [{ id: 's1', title: 'Results', markdown: 'Median $-67.8%$ and $α ≤ β$.' }],
+      bibEntries: [],
+      citationStyle: 'apa',
+    });
+    expect(previewHtml).not.toContain('katex-error');
+  });
 });
 
 describe('Non-Destructive Template Patcher (Springer Nature sn-jnl)', () => {
