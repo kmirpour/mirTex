@@ -321,6 +321,24 @@ pub fn parse_latex_log(stdout: &str, log_file: &str) -> Vec<LatexDiagnostic> {
             continue;
         }
 
+        // BibTeX / Biber errors
+        if line.starts_with("I found no ")
+            || line.starts_with("I couldn't open ")
+            || line.starts_with("ERROR - ")
+            || line.contains("Illegal, another \\bib")
+        {
+            let key = format!("BE:{line}");
+            if seen.insert(key) {
+                diags.push(LatexDiagnostic {
+                    severity: "error".to_string(),
+                    file: "references.bib".to_string(),
+                    line: None,
+                    message: line.to_string(),
+                });
+            }
+            continue;
+        }
+
         // LaTeX / Package / BibTeX warnings
         if line.starts_with("LaTeX Warning:")
             || line.starts_with("Package ") && line.contains(" Warning:")

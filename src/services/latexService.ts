@@ -202,7 +202,20 @@ export async function loadProjectTemplates(projectPath: string): Promise<Templat
       if (manifestNode) {
         try {
           const raw = await fileService.readFileDirect(manifestNode.path);
-          manifests.push(JSON.parse(raw.content) as TemplateManifest);
+          const stored = JSON.parse(raw.content) as TemplateManifest;
+          // Re-scan stored rawSource with the latest scanner rules so template fixes take effect automatically
+          if (stored.rawSource) {
+            manifests.push(
+              scanLatexTemplate(stored.rawSource, {
+                id: stored.id,
+                name: stored.name,
+                entryFile: stored.entryFile,
+                supportingFiles: stored.supportingFiles,
+              })
+            );
+          } else {
+            manifests.push(stored);
+          }
         } catch {
           // skip corrupt manifest
         }

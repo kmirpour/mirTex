@@ -338,7 +338,16 @@ export function scanLatexTemplate(
 
   const structuralCmds = findCommands(
     rawSource,
-    new Set(['section', 'bmhead', 'backmatter', 'appendix', 'bibliography', 'printbibliography']),
+    new Set([
+      'section',
+      'bmhead',
+      'backmatter',
+      'appendix',
+      'bibliographystyle',
+      'bibliography',
+      'printbibliography',
+      'nocite',
+    ]),
     documentBeginOffset,
     documentEndOffset,
     (name) => (name === 'backmatter' || name === 'appendix' || name === 'printbibliography' ? 0 : 1)

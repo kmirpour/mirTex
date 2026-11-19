@@ -206,5 +206,11 @@ describe('Non-Destructive Template Patcher (Springer Nature sn-jnl)', () => {
     expect(body).toContain('\\keywords{attention, cortex, mirtex}');
     expect(body).toContain('\\bmhead{Acknowledgements}');
     expect(body).toContain('Thanks to everyone.');
+    // \bibliographystyle must NOT be swallowed by the preceding \section*{Declarations} slot!
+    expect(body).toContain('\\bibliographystyle{unsrtnat}');
+    expect(body).toContain('\\bibliography{references}');
+    expect(body.indexOf('\\bibliographystyle{unsrtnat}')).toBeLessThan(
+      body.indexOf('\\bibliography{references}')
+    );
   });
 });
