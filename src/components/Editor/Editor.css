@@ -1,0 +1,210 @@
+.editor-wrapper {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--editor-bg);
+  position: relative;
+}
+
+.editor-section-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 20px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-app);
+  font-size: 12px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.editor-scroll-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 36px 32px 120px;
+}
+
+.editor-surface {
+  margin: 0 auto;
+  max-width: var(--editor-line-width, 780px);
+  font-family: var(--editor-font-family, Georgia, serif);
+  font-size: var(--editor-font-size, 16.5px);
+  line-height: var(--editor-line-height, 1.75);
+  color: var(--editor-text);
+}
+
+.editor-surface .tiptap {
+  min-height: 60vh;
+  outline: none;
+}
+
+.editor-surface .tiptap h1 {
+  font-size: 1.75em;
+  color: var(--editor-heading);
+  margin: 0 0 0.7em;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.editor-surface .tiptap h2 {
+  font-size: 1.32em;
+  color: var(--editor-heading);
+  margin: 1.4em 0 0.55em;
+  font-weight: 600;
+}
+
+.editor-surface .tiptap h3 {
+  font-size: 1.1em;
+  color: var(--editor-heading);
+  margin: 1.15em 0 0.45em;
+  font-weight: 600;
+}
+
+.editor-surface .tiptap p {
+  margin: 0 0 0.9em;
+}
+
+.editor-surface .tiptap ul,
+.editor-surface .tiptap ol {
+  margin: 0.4em 0 0.95em 1.5em;
+}
+
+.editor-surface .tiptap blockquote {
+  border-left: 3px solid var(--accent-color);
+  padding-left: 14px;
+  margin: 0.9em 0;
+  color: var(--editor-quote);
+  font-style: italic;
+}
+
+.editor-surface .tiptap code {
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 0.88em;
+  background: var(--editor-code-bg);
+  color: var(--tag-color);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.editor-surface .tiptap pre {
+  background: var(--bg-sidebar);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 12px 14px;
+  overflow-x: auto;
+  margin: 0.9em 0;
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 0.85em;
+}
+
+.editor-surface .tiptap pre code {
+  background: transparent;
+  padding: 0;
+  color: var(--text-color);
+}
+
+.editor-surface .tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: var(--text-muted);
+  pointer-events: none;
+  height: 0;
+  opacity: 0.6;
+}
+
+/* Paragraph Focus dimming */
+.editor-surface.dim-unfocused .tiptap > * {
+  opacity: 0.28;
+  transition: opacity 0.2s ease;
+}
+
+.editor-surface.dim-unfocused .tiptap > .has-focus,
+.editor-surface.dim-unfocused .tiptap > *:hover {
+  opacity: 1;
+}
+
+/* Search highlights */
+.search-match {
+  background: var(--warning-bg);
+  border-radius: 2px;
+}
+
+.search-match-current {
+  background: var(--accent-color);
+  color: #ffffff;
+}
+
+/* Inline Citation & Cross-Ref Autocomplete Popover */
+.trigger-popup {
+  position: fixed;
+  z-index: var(--z-popover);
+  width: 360px;
+  max-height: 290px;
+  overflow-y: auto;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: 0 12px 32px var(--shadow-color);
+  padding: 5px;
+}
+
+.trigger-popup-header {
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  padding: 4px 8px 6px;
+  display: flex;
+  justify-content: space-between;
+}
+
+.trigger-popup-item {
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--text-color);
+  text-align: left;
+  padding: 7px 9px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-family: inherit;
+}
+
+.trigger-popup-item:hover,
+.trigger-popup-item.selected {
+  background: var(--accent-light);
+}
+
+.trigger-popup-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--heading-color);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.trigger-popup-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.spin {
+  animation: mirtex-spin 1s linear infinite;
+}
+
+@keyframes mirtex-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}

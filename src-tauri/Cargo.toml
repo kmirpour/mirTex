@@ -1,0 +1,24 @@
+[package]
+name = "mirtex"
+version = "0.1.0"
+description = "MirTex - a distraction-free scientific paper writing and LaTeX publishing studio"
+authors = ["Koorosh Mirpour"]
+license = ""
+repository = ""
+edition = "2024"
+rust-version = "1.90"
+
+[lib]
+name = "mirtex_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.7.1", features = [] }
+
+[dependencies]
+base64 = "0.22"
+reqwest = { version = "0.12", default-features = false, features = ["native-tls", "json", "blocking"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tauri = { version = "2.12.1", features = [] }
+tauri-plugin-dialog = "2"
