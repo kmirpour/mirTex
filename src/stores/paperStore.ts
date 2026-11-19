@@ -962,6 +962,7 @@ export const usePaperStore = create<PaperStoreState>((set, get) => ({
       sectionContents,
       activeManifest,
       bibEntries,
+      citationStyle,
       texEngine,
     } = get();
     if (!projectPath || !project) {
@@ -981,6 +982,7 @@ export const usePaperStore = create<PaperStoreState>((set, get) => ({
         sectionContents,
         manifest: activeManifest,
         bibEntries,
+        citationStyle,
         pruneUnusedBib: true,
       });
 
@@ -1024,6 +1026,7 @@ export const usePaperStore = create<PaperStoreState>((set, get) => ({
       sectionContents,
       activeManifest,
       bibEntries,
+      citationStyle,
       lastBuildTexPath,
     } = get();
     if (!projectPath || !project) return;
@@ -1036,6 +1039,7 @@ export const usePaperStore = create<PaperStoreState>((set, get) => ({
         sectionContents,
         manifest: activeManifest,
         bibEntries,
+        citationStyle,
       });
       texPath = assembled.texPath;
       set({ lastBuildTexPath: texPath });

@@ -213,4 +213,34 @@ describe('Non-Destructive Template Patcher (Springer Nature sn-jnl)', () => {
       body.indexOf('\\bibliography{references}')
     );
   });
+
+  it('switches LaTeX natbib & bibliographystyle (and sn-jnl option) to APA author-year when selected', () => {
+    const compatManifest = scanLatexTemplate(SPRINGER_NATURE_COMPAT_TEX, {
+      id: 'springer-nature-compat',
+    });
+    const fm = createDefaultFrontMatter('PD Study');
+    const sections: PaperSection[] = [
+      { id: 's-intro', title: 'Introduction', role: 'introduction', fileName: '02-intro.md', path: '', status: 'draft' },
+    ];
+
+    const apaPatched = patchLatexTemplate({
+      manifest: compatManifest,
+      frontMatter: fm,
+      sections,
+      sectionContents: { 's-intro': '# Introduction\n\nText [@Chilukuri_2026].' },
+      citationStyle: 'apa',
+    });
+    expect(apaPatched.texSource).toContain('\\usepackage[authoryear,round]{natbib}');
+    expect(apaPatched.texSource).toContain('\\bibliographystyle{apalike}');
+
+    const snManifest = scanLatexTemplate(SPRINGER_NATURE_SNJNL_TEX, { id: 'sn-jnl' });
+    const snApa = patchLatexTemplate({
+      manifest: snManifest,
+      frontMatter: fm,
+      sections,
+      sectionContents: { 's-intro': '# Introduction\n\nText [@Chilukuri_2026].' },
+      citationStyle: 'apa',
+    });
+    expect(snApa.texSource).toContain('\\documentclass[pdflatex,sn-apa]{sn-jnl}');
+  });
 });

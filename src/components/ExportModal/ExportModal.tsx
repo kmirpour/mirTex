@@ -47,9 +47,10 @@ export function ExportModal() {
       sectionContents,
       slotMap: project.templateSlotMap,
       citationCommandOverride: project.citationCommandMode,
+      citationStyle,
       bibFileName: 'references',
     });
-  }, [open, project, activeManifest, frontMatter, sectionContents]);
+  }, [open, project, activeManifest, frontMatter, sectionContents, citationStyle]);
 
   if (!open || !project || !projectPath) return null;
 
@@ -67,6 +68,7 @@ export function ExportModal() {
         sectionContents,
         manifest: activeManifest,
         bibEntries,
+        citationStyle,
         pruneUnusedBib: pruneBib,
       });
       const blob = await buildOverleafZip({ projectPath, assembled, manifest: activeManifest });

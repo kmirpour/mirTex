@@ -147,7 +147,7 @@ export function SettingsModal() {
             <h3 style={{ fontSize: 13.5, marginBottom: 10 }}>LaTeX Toolchain & Zotero 10</h3>
             <div className="fm-grid-3">
               <div className="fm-field">
-                <label>Preview Citation Style</label>
+                <label>Citation & PDF Bibliography Style</label>
                 <select
                   className="mirtex-select"
                   value={s.citationStyle}

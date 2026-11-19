@@ -1,5 +1,5 @@
 import JSZip from 'jszip';
-import type { BibEntry } from '../types/citation';
+import type { BibEntry, CitationStyle } from '../types/citation';
 import type { TemplateManifest } from '../types/latex';
 import type { PaperFrontMatter, PaperProject } from '../types/paper';
 import { pruneBibEntries, serializeBibLibrary } from '../citations/bibtex';
@@ -37,6 +37,7 @@ export async function assembleLatexBuildDir(params: {
   sectionContents: Record<string, string>;
   manifest: TemplateManifest;
   bibEntries: BibEntry[];
+  citationStyle?: CitationStyle;
   pruneUnusedBib?: boolean;
 }): Promise<AssembledLatexOutput> {
   const {
@@ -46,6 +47,7 @@ export async function assembleLatexBuildDir(params: {
     sectionContents,
     manifest,
     bibEntries,
+    citationStyle,
     pruneUnusedBib = true,
   } = params;
 
@@ -56,6 +58,7 @@ export async function assembleLatexBuildDir(params: {
     sectionContents,
     slotMap: project.templateSlotMap,
     citationCommandOverride: project.citationCommandMode,
+    citationStyle,
     bibFileName: 'references',
   });
 

@@ -1,3 +1,4 @@
+import type { CitationStyle } from '../types/citation';
 import type { PaperFrontMatter, PaperSection } from '../types/paper';
 import type { ExtractedSlot, TemplateManifest } from '../types/latex';
 import {
@@ -23,6 +24,8 @@ export interface PatchTemplateOptions {
   /** Optional explicit mapping: slot.id -> section.id */
   slotMap?: Record<string, string>;
   citationCommandOverride?: 'auto' | 'cite' | 'citep' | 'autocite';
+  /** Applies the user's selected citation style (APA author-year, Nature, IEEE, Vancouver) to natbib / sn-jnl templates */
+  citationStyle?: CitationStyle;
   bibFileName?: string; // defaults to 'references'
 }
 
@@ -223,6 +226,11 @@ export function patchLatexTemplate(opts: PatchTemplateOptions): PatchedTemplateR
     lastAppliedStart = edit.start;
   }
 
+  // Synchronize LaTeX bibliography style & natbib / sn-jnl options with the selected citationStyle
+  if (opts.citationStyle) {
+    output = applyCitationStyleToLatex(output, manifest, opts.citationStyle);
+  }
+
   return {
     texSource: output,
     citedKeys: Array.from(allCitedKeys),
@@ -230,6 +238,52 @@ export function patchLatexTemplate(opts: PatchTemplateOptions): PatchedTemplateR
     unmappedSections,
     injectedPackages,
   };
+}
+
+function applyCitationStyleToLatex(
+  texSource: string,
+  manifest: TemplateManifest,
+  style: CitationStyle
+): string {
+  let out = texSource;
+
+  // 1. Springer Nature sn-jnl controls citation style via \documentclass[...,sn-...]{sn-jnl}
+  if (manifest.detectedAdapter === 'sn-jnl') {
+    const snOpt =
+      style === 'apa'
+        ? 'sn-apa'
+        : style === 'vancouver'
+          ? 'sn-vancouver'
+          : 'sn-mathphys-num';
+    out = out.replace(
+      /(\\documentclass\[[^\]]*?)\bsn-(?:mathphys-num|mathphys-ay|apa|vancouver|basic|chicago|aps|nature)\b([^\]]*\]\{sn-jnl\})/,
+      `$1${snOpt}$2`
+    );
+    return out;
+  }
+
+  // 2. natbib-based templates (e.g. Springer Nature Ready-to-Compile, Standard IMRaD, article + natbib)
+  if (manifest.packages.includes('natbib')) {
+    const natbibSpec: Record<CitationStyle, { opts: string; bst: string }> = {
+      apa: { opts: 'authoryear,round', bst: 'apalike' },
+      nature: { opts: 'numbers,square,sort&compress', bst: 'unsrtnat' },
+      ieee: { opts: 'numbers,square,sort&compress', bst: 'IEEEtran' },
+      vancouver: { opts: 'numbers,round,sort&compress', bst: 'vancouver' },
+    };
+    const spec = natbibSpec[style];
+    out = out.replace(
+      /\\usepackage(?:\[[^\]]*\])?\{natbib\}/,
+      `\\usepackage[${spec.opts}]{natbib}`
+    );
+    if (/\\bibliographystyle\{[^}]*\}/.test(out)) {
+      out = out.replace(
+        /\\bibliographystyle\{[^}]*\}/,
+        `\\bibliographystyle{${spec.bst}}`
+      );
+    }
+  }
+
+  return out;
 }
 
 function buildSlotReplacement(

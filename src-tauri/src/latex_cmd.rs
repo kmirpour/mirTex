@@ -160,6 +160,12 @@ fn compile_latex_sync(
         .unwrap_or("main")
         .to_string();
 
+    // Clear stale bibliography/aux files from previous builds so switching between
+    // numbered and author-year (APA) natbib styles never fails on an incompatible .bbl.
+    for ext in ["aux", "bbl", "blg", "bcf", "run.xml"] {
+        let _ = fs::remove_file(dir.join(format!("{stem}.{ext}")));
+    }
+
     let mut combined_log = String::new();
 
     let resolve_tex_bin = |bin: &str| -> String {
