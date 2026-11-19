@@ -3,7 +3,10 @@ import type { BibEntry, CitationStyle } from '../types/citation';
 import type { PaperFrontMatter, PaperSection } from '../types/paper';
 import { extractCitedKeysFromMarkdown } from '../citations/bibtex';
 import { buildBibliographyOrder, formatInlineCitation } from '../citations/cslFormatter';
-import { normalizeAcademicMarkdown } from '../utils/normalizeAcademicMarkdown';
+import {
+  decodeBasicHtmlEntities,
+  normalizeAcademicMarkdown,
+} from '../utils/normalizeAcademicMarkdown';
 
 /**
  * Exports the manuscript as a clean Academic Microsoft Word (.docx) document
@@ -125,7 +128,7 @@ export async function buildAcademicDocx(params: {
       }
 
       // Replace inline citations cleanly for Word readers
-      const resolvedLine = line
+      const resolvedLine = decodeBasicHtmlEntities(line)
         .replace(/\[([^\]]*@[a-zA-Z0-9_.:-]+[^\]]*)\]/g, (_m, inner: string) => {
           const keys: string[] = [];
           const re = /@([a-zA-Z0-9_.:-]+)/g;

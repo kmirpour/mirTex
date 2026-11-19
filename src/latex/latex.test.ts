@@ -4,6 +4,7 @@ import { markdownToLatex } from './markdownToLatex';
 import { patchLatexTemplate, resolveSlotMapping } from './templatePatcher';
 import { SPRINGER_NATURE_COMPAT_TEX, SPRINGER_NATURE_SNJNL_TEX, IEEE_TRAN_TEX } from './builtinTemplates';
 import { createDefaultFrontMatter, type PaperSection } from '../types/paper';
+import { renderAcademicPreviewHtml } from '../utils/academicMarkdown';
 
 describe('LaTeX Template Scanner', () => {
   it('inspects Springer Nature sn-jnl template and extracts all front-matter and body slots', () => {
@@ -104,6 +105,31 @@ Table: Performance summary {#tbl:perf}
     expect(res.latex).toContain('Fig.~\\ref{fig:my_plot}');
     expect(res.latex).toContain('$E = \\alpha_1 + \\beta_2$');
     expect(res.latex).not.toContain('\\textbackslash{}');
+  });
+
+  it('decodes TipTap HTML entities (&lt;, &gt;, &amp;) inside inline/display math and prose', () => {
+    const tiptapMathMd =
+      'Significant effect ($p &lt; 0.01$, $F &gt; 4.2$) in Group A &amp; B with raw p &lt; 0.05.\n\n$$\n\\begin{aligned}\na &amp;= b \\\\\nc &amp;&lt; d\n\\end{aligned}\n$$';
+
+    const res = markdownToLatex(tiptapMathMd, { citationDialect: 'natbib' });
+    expect(res.latex).toContain('$p < 0.01$');
+    expect(res.latex).toContain('$F > 4.2$');
+    expect(res.latex).toContain('Group A \\& B');
+    expect(res.latex).toContain('p \\textless{} 0.05');
+    expect(res.latex).toContain('a &= b');
+    expect(res.latex).toContain('c &< d');
+    expect(res.latex).not.toContain('&lt;');
+    expect(res.latex).not.toContain('&gt;');
+    expect(res.latex).not.toContain('&amp;');
+
+    const previewHtml = renderAcademicPreviewHtml({
+      sections: [{ id: 's1', title: 'Results', markdown: 'Significant ($p &lt; 0.01$ and $p &gt; 0.001$).' }],
+      bibEntries: [],
+      citationStyle: 'apa',
+    });
+    expect(previewHtml).toContain('katex');
+    expect(previewHtml).not.toContain('katex-error');
+    expect(previewHtml).not.toContain('&amp;lt;');
   });
 });
 

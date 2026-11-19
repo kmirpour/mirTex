@@ -72,12 +72,32 @@ export function normalizeAcademicMarkdown(markdown: string): string {
   return text;
 }
 
+/** Decodes the HTML entities emitted by TipTap's `encodeHtmlEntities()` (`&amp;`, `&lt;`, `&gt;`, `&quot;`). */
+export function decodeBasicHtmlEntities(text: string): string {
+  let out = text;
+  // Two passes also recover values that were previously double-encoded (e.g., `&amp;lt;`).
+  for (let pass = 0; pass < 2; pass++) {
+    const next = out
+      .replace(/&lt;/gi, '<')
+      .replace(/&gt;/gi, '>')
+      .replace(/&quot;/gi, '"')
+      .replace(/&#39;|&apos;/gi, "'")
+      .replace(/&amp;/gi, '&');
+    if (next === out) break;
+    out = next;
+  }
+  return out;
+}
+
 /**
- * Reverses TipTap's `escapeMarkdownSyntax` inside math spans (`\\alpha\_1` -> `\alpha_1`,
- * `\\\\` line-break doubled from `\\` -> `\\`, `\[` -> `[`, `\]` -> `]`, `\_` -> `_`, `\*` -> `*`).
+ * Reverses TipTap's `encodeHtmlEntities()` + `escapeMarkdownSyntax()` inside math spans:
+ * - `$p &lt; 0.01$` -> `$p < 0.01$`
+ * - `$a &amp;= b$` -> `$a &= b$`
+ * - `\\alpha\_1` -> `\alpha_1`
+ * - `\\\\` (doubled from `\\`) -> `\\`
  */
 function unescapeMathInner(inner: string): string {
-  return inner
+  return decodeBasicHtmlEntities(inner)
     // 4 backslashes (TipTap escaping LaTeX `\\` line break) -> 2 backslashes
     .replace(/\\\\\\\\/g, '\\\\')
     // TipTap doubled backslash before a LaTeX command name (`\\alpha`, `\\sum`, `\\mathcal`)

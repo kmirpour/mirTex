@@ -1,5 +1,8 @@
 import type { CitationDialect } from '../types/latex';
-import { normalizeAcademicMarkdown } from '../utils/normalizeAcademicMarkdown';
+import {
+  decodeBasicHtmlEntities,
+  normalizeAcademicMarkdown,
+} from '../utils/normalizeAcademicMarkdown';
 
 export interface TranspileOptions {
   citationDialect: CitationDialect;
@@ -23,6 +26,8 @@ export function escapeLatexText(text: string): string {
   return text
     .replace(/\\/g, '\\textbackslash{}')
     .replace(/([&%$#_{}])/g, '\\$1')
+    .replace(/</g, '\\textless{}')
+    .replace(/>/g, '\\textgreater{}')
     .replace(/~/g, '\\textasciitilde{}')
     .replace(/\^/g, '\\textasciicircum{}');
 }
@@ -457,17 +462,22 @@ function transpileInline(
     return stash(`\\href{${url}}{${escapeLatexText(label)}}`);
   });
 
-  // 7. Protect literal escaped asterisks `\*`, unescape CommonMark punctuation escapes
+  // 6b. Underline HTML tags `<u>...</u>` before escaping `<` / `>` in prose
+  working = working.replace(/<u>(.+?)<\/u>/gi, (_m, inner: string) => {
+    return stash(`\\underline{${escapeLatexText(decodeBasicHtmlEntities(inner))}}`);
+  });
+
+  // 7. Protect literal escaped asterisks `\*`, decode HTML entities & CommonMark escapes
   //    produced by TipTap's Markdown serializer, then escape plain prose for LaTeX
   working = working.replace(/\\\*/g, () => stash('*'));
+  working = decodeBasicHtmlEntities(working);
   working = working.replace(/\\([\\`_[\]~{}#&%$^!])/g, '$1');
   working = escapeLatexText(working);
 
-  // 8. Bold + Italic, Bold, Italic, Underline, Superscript, Subscript
+  // 8. Bold + Italic, Bold, Italic, Superscript, Subscript
   working = working.replace(/\*\*\*(.+?)\*\*\*/g, '\\textbf{\\textit{$1}}');
   working = working.replace(/\*\*(.+?)\*\*/g, '\\textbf{$1}');
   working = working.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, '\\textit{$1}');
-  working = working.replace(/<u>(.+?)<\/u>/gi, '\\underline{$1}');
   working = working.replace(/\\textasciicircum\{\}([^\s\\]+?)\\textasciicircum\{\}/g, '\\textsuperscript{$1}');
   working = working.replace(/\\textasciitilde\{\}([^\s\\]+?)\\textasciitilde\{\}/g, '\\textsubscript{$1}');
 
