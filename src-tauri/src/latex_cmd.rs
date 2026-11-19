@@ -37,78 +37,79 @@ pub struct LatexCompileResult {
     pub elapsed_ms: u64,
 }
 
-fn probe_tool_version(bin: &str) -> Option<String> {
-    let out = hidden_command(bin)
-        .arg("--version")
-        .stdin(std::process::Stdio::null())
-        .output()
-        .ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    let first = String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .next()
-        .unwrap_or("")
-        .trim()
-        .to_string();
-    if first.is_empty() {
-        Some(bin.to_string())
-    } else {
-        Some(first)
-    }
-}
-
-fn tool_exists(bin: &str, win_fallbacks: &[&str]) -> bool {
-    if hidden_command(bin)
-        .arg("--version")
-        .stdin(std::process::Stdio::null())
-        .output()
-        .is_ok()
-    {
-        return true;
-    }
+fn find_executable<S: AsRef<str>>(bin_name: &str, extra_candidates: &[S]) -> Option<PathBuf> {
     #[cfg(windows)]
-    {
-        for p in win_fallbacks {
-            if Path::new(p).exists() {
-                return true;
+    let names = [format!("{bin_name}.exe"), bin_name.to_string()];
+    #[cfg(not(windows))]
+    let names = [bin_name.to_string()];
+
+    if let Some(path_var) = std::env::var_os("PATH") {
+        for dir in std::env::split_paths(&path_var) {
+            for name in &names {
+                let candidate = dir.join(name);
+                if candidate.is_file() {
+                    return Some(candidate);
+                }
             }
         }
     }
-    #[cfg(not(windows))]
-    let _ = win_fallbacks;
-    false
+
+    for extra in extra_candidates {
+        let p = Path::new(extra.as_ref());
+        if p.is_file() {
+            return Some(p.to_path_buf());
+        }
+    }
+
+    None
+}
+
+fn describe_found_tool<S: AsRef<str>>(bin_name: &str, extra_candidates: &[S]) -> Option<String> {
+    let found = find_executable(bin_name, extra_candidates)?;
+    Some(format!("{bin_name} ({})", found.display()))
 }
 
 #[tauri::command]
 pub async fn detect_tex_toolchain() -> Result<TexToolchainInfo, String> {
-    tauri::async_runtime::spawn_blocking(|| {
-        Ok(TexToolchainInfo {
-            pdflatex: probe_tool_version("pdflatex"),
-            xelatex: probe_tool_version("xelatex"),
-            lualatex: probe_tool_version("lualatex"),
-            latexmk: probe_tool_version("latexmk"),
-            bibtex: probe_tool_version("bibtex"),
-            biber: probe_tool_version("biber"),
-            texstudio_found: tool_exists(
-                "texstudio",
-                &[
-                    r"C:\Program Files\texstudio\texstudio.exe",
-                    r"C:\Program Files (x86)\texstudio\texstudio.exe",
-                ],
-            ),
-            texworks_found: tool_exists(
-                "texworks",
-                &[
-                    r"C:\texlive\2024\bin\windows\texworks.exe",
-                    r"C:\Program Files\TeXworks\TeXworks.exe",
-                ],
-            ),
-        })
+    let texlive_bins = [
+        r"C:\texlive\2026\bin\windows",
+        r"C:\texlive\2025\bin\windows",
+        r"C:\texlive\2024\bin\windows",
+        r"C:\texlive\2023\bin\windows",
+    ];
+    let with_texlive = |exe: &str| -> Vec<String> {
+        texlive_bins
+            .iter()
+            .map(|d| format!(r"{d}\{exe}.exe"))
+            .collect()
+    };
+
+    let pdflatex_extra = with_texlive("pdflatex");
+    let xelatex_extra = with_texlive("xelatex");
+    let lualatex_extra = with_texlive("lualatex");
+    let latexmk_extra = with_texlive("latexmk");
+    let bibtex_extra = with_texlive("bibtex");
+    let biber_extra = with_texlive("biber");
+    let mut texworks_extra = with_texlive("texworks");
+    texworks_extra.push(r"C:\Program Files\TeXworks\TeXworks.exe".to_string());
+
+    Ok(TexToolchainInfo {
+        pdflatex: describe_found_tool("pdflatex", &pdflatex_extra),
+        xelatex: describe_found_tool("xelatex", &xelatex_extra),
+        lualatex: describe_found_tool("lualatex", &lualatex_extra),
+        latexmk: describe_found_tool("latexmk", &latexmk_extra),
+        bibtex: describe_found_tool("bibtex", &bibtex_extra),
+        biber: describe_found_tool("biber", &biber_extra),
+        texstudio_found: find_executable(
+            "texstudio",
+            &[
+                r"C:\Program Files\texstudio\texstudio.exe",
+                r"C:\Program Files (x86)\texstudio\texstudio.exe",
+            ],
+        )
+        .is_some(),
+        texworks_found: find_executable("texworks", &texworks_extra).is_some(),
     })
-    .await
-    .map_err(|e| format!("Toolchain probe failed: {e}"))?
 }
 
 #[tauri::command]
@@ -161,8 +162,25 @@ fn compile_latex_sync(
 
     let mut combined_log = String::new();
 
+    let resolve_tex_bin = |bin: &str| -> String {
+        let extra = [
+            format!(r"C:\texlive\2026\bin\windows\{bin}.exe"),
+            format!(r"C:\texlive\2025\bin\windows\{bin}.exe"),
+            format!(r"C:\texlive\2024\bin\windows\{bin}.exe"),
+            format!(r"C:\texlive\2023\bin\windows\{bin}.exe"),
+        ];
+        let refs: Vec<&str> = extra.iter().map(|s| s.as_str()).collect();
+        find_executable(bin, &refs)
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| bin.to_string())
+    };
+
+    let engine_bin = resolve_tex_bin(engine);
+    let bibtex_bin = resolve_tex_bin("bibtex");
+    let biber_bin = resolve_tex_bin("biber");
+
     let run_engine = |pass: u8, log_buf: &mut String| -> Result<bool, String> {
-        let out = hidden_command(engine)
+        let out = hidden_command(&engine_bin)
             .current_dir(dir)
             .stdin(std::process::Stdio::null())
             .args([
@@ -200,7 +218,7 @@ fn compile_latex_sync(
     };
 
     if pass1_ok && should_run_biber {
-        if let Ok(out) = hidden_command("biber")
+        if let Ok(out) = hidden_command(&biber_bin)
             .current_dir(dir)
             .stdin(std::process::Stdio::null())
             .arg(&stem)
@@ -211,7 +229,7 @@ fn compile_latex_sync(
             combined_log.push_str(&String::from_utf8_lossy(&out.stderr));
         }
     } else if pass1_ok && should_run_bibtex {
-        if let Ok(out) = hidden_command("bibtex")
+        if let Ok(out) = hidden_command(&bibtex_bin)
             .current_dir(dir)
             .stdin(std::process::Stdio::null())
             .arg(&stem)

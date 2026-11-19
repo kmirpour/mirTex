@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { scanLatexTemplate } from './templateScanner';
 import { markdownToLatex } from './markdownToLatex';
 import { patchLatexTemplate, resolveSlotMapping } from './templatePatcher';
-import { SPRINGER_NATURE_SNJNL_TEX, IEEE_TRAN_TEX } from './builtinTemplates';
+import { SPRINGER_NATURE_COMPAT_TEX, SPRINGER_NATURE_SNJNL_TEX, IEEE_TRAN_TEX } from './builtinTemplates';
 import { createDefaultFrontMatter, type PaperSection } from '../types/paper';
 
 describe('LaTeX Template Scanner', () => {
@@ -142,5 +142,51 @@ describe('Non-Destructive Template Patcher (Springer Nature sn-jnl)', () => {
       patched.texSource.indexOf('\\section{Methods}')
     );
     expect(patched.citedKeys).toEqual(['smith2024']);
+  });
+
+  it('does not corrupt \\newcommand{\\keywords} or \\newcommand{\\bmhead} in preamble of Springer Nature Ready-to-Compile template', () => {
+    const manifest = scanLatexTemplate(SPRINGER_NATURE_COMPAT_TEX, {
+      id: 'springer-nature-compat',
+      name: 'Springer Nature (Ready-to-Compile)',
+    });
+
+    const kwSlot = manifest.slots.find((s) => s.kind === 'keywords');
+    expect(kwSlot).toBeDefined();
+    // Must match \keywords{...} AFTER \begin{document}, NOT inside \newcommand{\keywords} in the preamble!
+    expect(kwSlot!.start).toBeGreaterThan(manifest.documentBeginOffset);
+
+    const bmSlot = manifest.slots.find((s) => s.kind === 'backmatter_heading');
+    expect(bmSlot).toBeDefined();
+    expect(bmSlot!.start).toBeGreaterThan(manifest.documentBeginOffset);
+
+    const fm = createDefaultFrontMatter('Visual Attention Paper');
+    fm.keywords = ['attention', 'cortex', 'mirtex'];
+    const sections: PaperSection[] = [
+      { id: 's-abs', title: 'Abstract', role: 'abstract', fileName: '01-abstract.md', path: '', status: 'draft' },
+      { id: 's-intro', title: 'Introduction', role: 'introduction', fileName: '02-intro.md', path: '', status: 'draft' },
+      { id: 's-ack', title: 'Acknowledgements', role: 'acknowledgments', fileName: '07-ack.md', path: '', status: 'draft' },
+    ];
+
+    const patched = patchLatexTemplate({
+      manifest,
+      frontMatter: fm,
+      sections,
+      sectionContents: {
+        's-abs': '# Abstract\n\nConcise summary.',
+        's-intro': '# Introduction\n\nBody text.',
+        's-ack': '# Acknowledgements\n\nThanks to everyone.',
+      },
+    });
+
+    // Preamble macro definitions must remain completely untouched
+    expect(patched.texSource).toContain(
+      '\\newcommand{\\keywords}[1]{\\par\\noindent\\textbf{Keywords:} #1\\par\\vspace{1em}}'
+    );
+    expect(patched.texSource).toContain('\\newcommand{\\bmhead}[1]{\\subsection*{#1}}');
+    // Body slots must be cleanly filled after \begin{document}
+    const body = patched.texSource.slice(patched.texSource.indexOf('\\begin{document}'));
+    expect(body).toContain('\\keywords{attention, cortex, mirtex}');
+    expect(body).toContain('\\bmhead{Acknowledgements}');
+    expect(body).toContain('Thanks to everyone.');
   });
 });

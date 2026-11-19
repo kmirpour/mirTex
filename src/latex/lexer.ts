@@ -147,9 +147,23 @@ export function parseCommandAt(
   return { name, starred, start: backslashIdx, end, optArgs, args };
 }
 
+const MACRO_DEF_TWO_ARG = new Set([
+  'newcommand',
+  'renewcommand',
+  'providecommand',
+  'DeclareRobustCommand',
+  'DeclareMathOperator',
+]);
+
+const MACRO_DEF_THREE_ARG = new Set(['newenvironment', 'renewenvironment']);
+const TEX_DEF_COMMANDS = new Set(['def', 'gdef', 'edef', 'xdef']);
+
 /**
- * Iterates over all non-commented LaTeX command invocations matching `targetNames`
- * within `[rangeStart, rangeEnd)`.
+ * Iterates over all top-level (brace depth 0), non-commented LaTeX command
+ * invocations matching `targetNames` within `[rangeStart, rangeEnd)`.
+ * Automatically skips macro/environment definitions (`\newcommand`, `\def`,
+ * `\let`, `\newenvironment`, etc.) and requires commands with mandatory
+ * arguments to actually carry their `{...}` argument(s).
  */
 export function findCommands(
   src: string,
@@ -160,6 +174,7 @@ export function findCommands(
 ): ParsedCommand[] {
   const results: ParsedCommand[] = [];
   let i = rangeStart;
+  let braceDepth = 0;
 
   while (i < rangeEnd) {
     const ch = src[i];
@@ -167,14 +182,69 @@ export function findCommands(
       while (i < rangeEnd && src[i] !== '\n') i++;
       continue;
     }
+    if (ch === '{' && !isEscaped(src, i)) {
+      braceDepth++;
+      i++;
+      continue;
+    }
+    if (ch === '}' && !isEscaped(src, i)) {
+      braceDepth = Math.max(0, braceDepth - 1);
+      i++;
+      continue;
+    }
     if (ch === '\\' && !isEscaped(src, i)) {
       let j = i + 1;
       while (j < rangeEnd && /[a-zA-Z@]/.test(src[j])) j++;
       const name = src.slice(i + 1, j);
-      if (targetNames.has(name)) {
+
+      // Skip macro / environment definitions so commands inside definitions are never mistaken for document slots
+      if (braceDepth === 0 && MACRO_DEF_TWO_ARG.has(name)) {
+        const defCmd = parseCommandAt(src, i, 2, 2);
+        i = defCmd ? defCmd.end : Math.max(j, i + 1);
+        continue;
+      }
+      if (braceDepth === 0 && MACRO_DEF_THREE_ARG.has(name)) {
+        const envDef = parseCommandAt(src, i, 3, 2);
+        i = envDef ? envDef.end : Math.max(j, i + 1);
+        continue;
+      }
+      if (braceDepth === 0 && TEX_DEF_COMMANDS.has(name)) {
+        // Advance past parameter list to balanced {body}
+        let scan = j;
+        while (scan < rangeEnd && src[scan] !== '{') {
+          if (src[scan] === '%' && !isEscaped(src, scan)) {
+            while (scan < rangeEnd && src[scan] !== '\n') scan++;
+            continue;
+          }
+          scan++;
+        }
+        const body = scan < rangeEnd ? findBalancedGroup(src, scan, '{', '}') : null;
+        i = body ? body.endIdx : Math.max(j, i + 1);
+        continue;
+      }
+      if (braceDepth === 0 && name === 'let') {
+        // Skip `\let\foo=\bar`
+        let scan = skipWhitespaceAndComments(src, j);
+        for (let tok = 0; tok < 2 && scan < rangeEnd; tok++) {
+          if (src[scan] === '=') {
+            scan = skipWhitespaceAndComments(src, scan + 1);
+          }
+          if (src[scan] === '\\') {
+            scan++;
+            while (scan < rangeEnd && /[a-zA-Z@]/.test(src[scan])) scan++;
+          } else {
+            scan++;
+          }
+          scan = skipWhitespaceAndComments(src, scan);
+        }
+        i = Math.max(scan, j);
+        continue;
+      }
+
+      if (braceDepth === 0 && targetNames.has(name)) {
         const count = mandatoryArgCount ? mandatoryArgCount(name) : 1;
         const parsed = parseCommandAt(src, i, count, 2);
-        if (parsed && parsed.end <= rangeEnd) {
+        if (parsed && parsed.end <= rangeEnd && parsed.args.length >= count) {
           results.push(parsed);
           i = parsed.end;
           continue;

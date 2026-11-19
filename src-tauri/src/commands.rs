@@ -268,7 +268,7 @@ pub fn open_path_external(path: String, app_hint: Option<String>) -> Result<(), 
     if let Some(hint) = app_hint {
         let trimmed = hint.trim();
         if !trimmed.is_empty() {
-            let spawn_res = std::process::Command::new(trimmed).arg(&p).spawn();
+            let spawn_res = hidden_command(trimmed).arg(&p).spawn();
             if spawn_res.is_ok() {
                 return Ok(());
             }
@@ -291,7 +291,7 @@ pub fn open_path_external(path: String, app_hint: Option<String>) -> Result<(), 
                 };
                 for cand in candidates {
                     if Path::new(cand).exists()
-                        && std::process::Command::new(cand).arg(&p).spawn().is_ok()
+                        && hidden_command(cand).arg(&p).spawn().is_ok()
                     {
                         return Ok(());
                     }
@@ -302,8 +302,9 @@ pub fn open_path_external(path: String, app_hint: Option<String>) -> Result<(), 
 
     #[cfg(windows)]
     {
-        std::process::Command::new("cmd")
+        hidden_command("cmd")
             .args(["/C", "start", "", &p.to_string_lossy()])
+            .stdin(std::process::Stdio::null())
             .spawn()
             .map_err(|e| format!("Failed to open path: {e}"))?;
         Ok(())
