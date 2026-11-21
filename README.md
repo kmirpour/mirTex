@@ -27,6 +27,23 @@ Built with **Tauri 2 (Rust)** + **React 19** + **TipTap 3** + **KaTeX** + **Zust
 
 ---
 
+## Installing MirTex
+
+### Pre-Built Installers (Recommended)
+
+Download the latest installer for your operating system from the repository's **Releases** page:
+
+- **Windows (x64):** `MirTex_*_x64-setup.exe` *(NSIS installer, recommended)* or `.msi`
+- **macOS (Apple Silicon M1–M4):** `MirTex_*_aarch64.dmg`
+- **macOS (Intel):** `MirTex_*_x64.dmg`
+- **Linux:** `.AppImage` or `.deb`
+
+> **Unsigned installer note:** Because pre-built community releases are not yet code-signed, Windows SmartScreen may ask you to click **More info → Run anyway**, and macOS Gatekeeper may require right-clicking the app and choosing **Open** on first launch.
+>
+> **Optional companions:** Install **TeX Live** (or MiKTeX) if you want local LaTeX PDF compilation, and enable Zotero's Local API (*Settings → Advanced → Allow other applications on this computer to communicate with Zotero*) to search **Zotero 10** directly.
+
+---
+
 ## Development & Building
 
 ```bash
@@ -42,6 +59,29 @@ npm run check
 # Run Rust backend unit tests
 npm run test:rust
 
-# Build production Windows installer / bundle
+# Build production desktop installer / bundle for your current OS
 npm run tauri build
 ```
+
+---
+
+## Automated Releases (GitHub Actions)
+
+MirTex includes a release workflow at [`.github/workflows/release.yml`](.github/workflows/release.yml) powered by `tauri-apps/tauri-action`. It runs `npm run check`, builds native installers for **Windows (x64)**, **macOS (Apple Silicon & Intel)**, and **Linux**, and automatically publishes them to **GitHub Releases**.
+
+### Publishing a New Release
+
+1. Update the version number (for example, `0.1.0` → `0.2.0`) in all three files:
+   - `package.json`
+   - `src-tauri/tauri.conf.json`
+   - `src-tauri/Cargo.toml`
+2. Commit, tag, and push to GitHub:
+   ```bash
+   git add .
+   git commit -m "Release v0.2.0"
+   git tag v0.2.0
+   git push origin main --tags
+   ```
+3. You can also trigger a build manually anytime from GitHub via **Actions → Release MirTex → Run workflow** (with an option to create the release as a draft).
+
+> **Repository permission check:** The workflow declares `permissions: contents: write`. If GitHub Actions cannot create a release, check **Settings → Actions → General → Workflow permissions** on GitHub and ensure **Read and write permissions** is allowed.
