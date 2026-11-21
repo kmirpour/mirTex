@@ -1,6 +1,8 @@
 import type { CitationStyle } from '../types/citation';
-import type { PaperFrontMatter, PaperSection } from '../types/paper';
+import type { PaperFrontMatter, PaperSection, ProjectFigureFile } from '../types/paper';
 import type { ExtractedSlot, TemplateManifest } from '../types/latex';
+import { normalizeAcademicMarkdown } from '../utils/normalizeAcademicMarkdown';
+import { figureLabelFromFileName } from '../utils/paperOutline';
 import {
   renderAbstractSlot,
   renderAuthorsSlot,
@@ -27,6 +29,8 @@ export interface PatchTemplateOptions {
   /** Applies the user's selected citation style (APA author-year, Nature, IEEE, Vancouver) to natbib / sn-jnl templates */
   citationStyle?: CitationStyle;
   bibFileName?: string; // defaults to 'references'
+  /** Discovered figure files in figures/ or figure/ folders */
+  projectFigures?: ProjectFigureFile[];
 }
 
 export interface PatchedTemplateResult {
@@ -110,12 +114,36 @@ export function patchLatexTemplate(opts: PatchTemplateOptions): PatchedTemplateR
   const bibBase = (opts.bibFileName || 'references').replace(/\.bib$/i, '');
   const mappedSlots = resolveSlotMapping(manifest, sections, opts.slotMap);
 
+  const embeddedFigureLabels = new Set<string>();
+  for (const sec of sections) {
+    const normMd = normalizeAcademicMarkdown(sectionContents[sec.id] ?? '');
+    const figScanRe =
+      /!\[((?:[^[\]\n]|\[[^[\]\n]*\])*)\]\(([^)\n]+)\)(?:[ \t]*\{([^}\n]*)\})?/g;
+    let m: RegExpExecArray | null;
+    while ((m = figScanRe.exec(normMd)) !== null) {
+      const imgPath = m[2].trim().replace(/\\/g, '/').replace(/^\.\//, '');
+      const attrs = m[3] || '';
+      const lblMatch = /#(fig:[a-zA-Z0-9_.-]+)/.exec(attrs);
+      if (lblMatch) embeddedFigureLabels.add(lblMatch[1].toLowerCase());
+      embeddedFigureLabels.add(figureLabelFromFileName(imgPath).toLowerCase());
+      const rawStem = (imgPath.split('/').pop() || '').replace(/\.[^.]+$/, '').toLowerCase();
+      if (rawStem) embeddedFigureLabels.add(`fig:${rawStem}`);
+      embeddedFigureLabels.add(imgPath.toLowerCase());
+    }
+  }
+
+  const emittedAutoFigures = new Set<string>();
+  const relocatedAbstractFigures: string[] = [];
+
   const transpileOpts = {
     citationDialect: manifest.citationDialect,
     citationCommandOverride: opts.citationCommandOverride,
     useCleveref: manifest.hasCleveref,
     useBooktabs: true,
     stripTopH1: true,
+    projectFigures: opts.projectFigures,
+    embeddedFigureLabels,
+    emittedAutoFigures,
   };
 
   let usesFigures = false;
@@ -125,7 +153,11 @@ export function patchLatexTemplate(opts: PatchTemplateOptions): PatchedTemplateR
 
   const transpileSection = (sec: PaperSection): string => {
     const md = sectionContents[sec.id] ?? '';
-    const res = markdownToLatex(md, transpileOpts);
+    const res = markdownToLatex(md, {
+      ...transpileOpts,
+      sectionTitle: sec.title,
+      sectionRole: sec.role,
+    });
     if (res.usesFigures) usesFigures = true;
     if (res.usesTables) usesTables = true;
     if (res.usesMath) usesMath = true;
@@ -152,7 +184,8 @@ export function patchLatexTemplate(opts: PatchTemplateOptions): PatchedTemplateR
       sections,
       mappedSlots,
       transpileSection,
-      bibBase
+      bibBase,
+      relocatedAbstractFigures
     );
     if (slot.kind === 'section') {
       lastBodySectionSlotEnd = slot.end;
@@ -171,28 +204,47 @@ export function patchLatexTemplate(opts: PatchTemplateOptions): PatchedTemplateR
   );
   if (unmappedSections.length > 0) {
     const extraLatex = unmappedSections
-      .map((sec) => {
+      .map((sec, idx) => {
         const body = transpileSection(sec);
         const cmd = sec.starred ? '\\section*' : '\\section';
-        return `\n${cmd}{${escapeLatexText(sec.title)}}\n\n${body}\n`;
+        const relocated =
+          idx === 0 && relocatedAbstractFigures.length > 0
+            ? `${relocatedAbstractFigures.splice(0, relocatedAbstractFigures.length).join('\n\n')}\n\n`
+            : '';
+        return `\n${cmd}{${escapeLatexText(sec.title)}}\n\n${relocated}${body}\n`;
       })
       .join('\n');
 
     const insertAt =
       lastBodySectionSlotEnd ?? bibSlotStart ?? manifest.documentEndOffset;
     edits.push({ start: insertAt, end: insertAt, replacement: extraLatex });
+  } else if (relocatedAbstractFigures.length > 0) {
+    const insertAt =
+      lastBodySectionSlotEnd ?? bibSlotStart ?? manifest.documentEndOffset;
+    edits.push({
+      start: insertAt,
+      end: insertAt,
+      replacement: `\n${relocatedAbstractFigures.splice(0, relocatedAbstractFigures.length).join('\n\n')}\n`,
+    });
   }
 
-  // Auto-inject required packages into preamble if used by the paper and absent from template
+  // Auto-inject required packages & \graphicspath into preamble if used by the paper
   const injectedPackages: string[] = [];
   if (usesFigures && !manifest.hasGraphicx) injectedPackages.push('graphicx');
   if (usesTables && !manifest.hasBooktabs) injectedPackages.push('booktabs');
   if (usesMath && !manifest.hasAmsmath) injectedPackages.push('amsmath');
 
-  if (injectedPackages.length > 0 && manifest.preambleEndOffset > 0) {
+  const needsGraphicsPath =
+    usesFigures && !/\\graphicspath\s*\{/.test(manifest.rawSource);
+
+  if ((injectedPackages.length > 0 || needsGraphicsPath) && manifest.preambleEndOffset > 0) {
+    const preambleLines = [
+      ...injectedPackages.map((p) => `\\usepackage{${p}}`),
+      ...(needsGraphicsPath ? ['\\graphicspath{{figures/}{figure/}{./}}'] : []),
+    ];
     const pkgBlock =
       `\n% Added automatically by MirTex for paper elements\n` +
-      injectedPackages.map((p) => `\\usepackage{${p}}`).join('\n') +
+      preambleLines.join('\n') +
       `\n`;
     edits.push({
       start: manifest.preambleEndOffset,
@@ -293,7 +345,8 @@ function buildSlotReplacement(
   sections: PaperSection[],
   mappedSlots: Record<string, string>,
   transpileSection: (sec: PaperSection) => string,
-  bibBase: string
+  bibBase: string,
+  relocatedAbstractFigures: string[]
 ): string | null {
   switch (slot.kind) {
     case 'title':
@@ -314,8 +367,15 @@ function buildSlotReplacement(
     case 'abstract': {
       const secId = mappedSlots[slot.id];
       const sec = sections.find((s) => s.id === secId) || sections.find((s) => s.role === 'abstract');
-      const body = sec ? transpileSection(sec) : '';
-      return renderAbstractSlot(body, slot);
+      const rawBody = sec ? transpileSection(sec) : '';
+      const cleanBody = rawBody
+        .replace(/\\begin\{figure\*?\}[\s\S]*?\\end\{figure\*?\}/g, (figBlock) => {
+          relocatedAbstractFigures.push(figBlock.trim());
+          return '';
+        })
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+      return renderAbstractSlot(cleanBody, slot);
     }
     case 'declarations': {
       const secId = mappedSlots[slot.id];
@@ -348,9 +408,13 @@ function buildSlotReplacement(
         return '';
       }
       const body = transpileSection(sec);
+      const relocated =
+        relocatedAbstractFigures.length > 0
+          ? `${relocatedAbstractFigures.splice(0, relocatedAbstractFigures.length).join('\n\n')}\n\n`
+          : '';
       const cmd = slot.starred || sec.starred ? '\\section*' : '\\section';
       const lbl = slot.latexLabel ? `\\label{${slot.latexLabel}}` : '';
-      return `${cmd}{${escapeLatexText(sec.title)}}${lbl}\n\n${body}\n\n`;
+      return `${cmd}{${escapeLatexText(sec.title)}}${lbl}\n\n${relocated}${body}\n\n`;
     }
     default:
       return null;

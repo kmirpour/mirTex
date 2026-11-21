@@ -1,4 +1,4 @@
-import { useMemo, useState, type DragEvent } from 'react';
+import { useEffect, useMemo, useState, type DragEvent } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import {
   BookMarked,
@@ -15,11 +15,20 @@ import {
   Table2,
   Trash2,
 } from 'lucide-react';
-import { usePaperStore } from '../../stores/paperStore';
+import { flushPendingEditorUpdate, usePaperStore } from '../../stores/paperStore';
 import { cleanBibValue, formatAuthorShort } from '../../citations/bibtex';
-import { formatWordsCompact, indexPaperElements } from '../../utils/paperOutline';
+import {
+  cleanFigureCaption,
+  formatWordsCompact,
+  indexPaperElements,
+  mergePaperAndFolderFigures,
+  type IndexedElement,
+} from '../../utils/paperOutline';
+import { normalizeAcademicMarkdown } from '../../utils/normalizeAcademicMarkdown';
 import { promptDialog } from '../../services/dialogs';
 import './Sidebar.css';
+
+const EMPTY_SECTIONS: Record<string, string> = {};
 
 export function Sidebar() {
   const s = usePaperStore(
@@ -29,7 +38,8 @@ export function Sidebar() {
       setSidebarTab: st.setSidebarTab,
       project: st.project,
       frontMatter: st.frontMatter,
-      sectionContents: st.sectionContents,
+      sectionContents:
+        st.sidebarOpen && st.sidebarTab === 'elements' ? st.sectionContents : EMPTY_SECTIONS,
       activeTarget: st.activeTarget,
       selectTarget: st.selectTarget,
       addSectionAction: st.addSectionAction,
@@ -42,6 +52,8 @@ export function Sidebar() {
       setTemplateInspectorOpen: st.setTemplateInspectorOpen,
       activeManifest: st.activeManifest,
       editorInstance: st.editorInstance,
+      projectFigures: st.projectFigures,
+      refreshFiguresAction: st.refreshFiguresAction,
     }))
   );
 
@@ -50,16 +62,25 @@ export function Sidebar() {
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
   const [refFilter, setRefFilter] = useState('');
 
+  useEffect(() => {
+    if (s.sidebarOpen && s.sidebarTab === 'elements') {
+      void usePaperStore.getState().refreshFiguresAction();
+    }
+  }, [s.sidebarOpen, s.sidebarTab]);
+
   const indexedElements = useMemo(() => {
-    if (!s.project) return [];
-    return indexPaperElements(
-      s.project.sections.map((sec) => ({
-        id: sec.id,
-        title: sec.title,
-        markdown: s.sectionContents[sec.id] ?? '',
-      }))
+    if (!s.sidebarOpen || s.sidebarTab !== 'elements' || !s.project) return [];
+    return mergePaperAndFolderFigures(
+      indexPaperElements(
+        s.project.sections.map((sec) => ({
+          id: sec.id,
+          title: sec.title,
+          markdown: s.sectionContents[sec.id] ?? '',
+        }))
+      ),
+      s.projectFigures
     ).filter((e) => e.kind !== 'section');
-  }, [s.project, s.sectionContents]);
+  }, [s.sidebarOpen, s.sidebarTab, s.project, s.sectionContents, s.projectFigures]);
 
   const filteredRefs = useMemo(() => {
     const q = refFilter.trim().toLowerCase();
@@ -79,6 +100,97 @@ export function Sidebar() {
     if (s.editorInstance && s.activeTarget !== 'frontmatter') {
       s.editorInstance.chain().focus().insertContent(text).run();
     }
+  };
+
+  const handleSidebarInsertFigure = async (el: IndexedElement) => {
+    if (!s.editorInstance || s.activeTarget === 'frontmatter' || !el.imagePath) return;
+    const caption = await promptDialog({
+      title: `Insert Figure (${el.imagePath})`,
+      message: 'Enter the figure caption (appears after "Figure #:" in the PDF):',
+      placeholder: 'Describe what this figure shows…',
+      defaultValue: '',
+      confirmLabel: 'Insert Figure',
+    });
+    if (caption === null || s.editorInstance.isDestroyed) return;
+    const embedLine = `![${caption.trim()}](${el.imagePath}){#${el.label} width=0.85}`;
+    const { $from } = s.editorInstance.state.selection;
+    if ($from.parent.textContent.trim().length === 0) {
+      s.editorInstance.chain().focus().insertContent({ type: 'text', text: embedLine }).run();
+    } else {
+      const insertPos = $from.depth > 0 ? $from.after() : s.editorInstance.state.doc.content.size;
+      s.editorInstance
+        .chain()
+        .focus()
+        .insertContentAt(insertPos, {
+          type: 'paragraph',
+          content: [{ type: 'text', text: embedLine }],
+        })
+        .run();
+    }
+  };
+
+  const handleSidebarEditCaption = async (el: IndexedElement) => {
+    if (el.kind !== 'figure' || el.sectionId === 'figures-folder') return;
+    flushPendingEditorUpdate();
+    const store = usePaperStore.getState();
+    const rawMd = store.sectionContents[el.sectionId] ?? '';
+    const normMd = normalizeAcademicMarkdown(rawMd);
+    const defaultCap =
+      el.title === `Figure ${el.number}`
+        ? ''
+        : cleanFigureCaption(el.title, el.imagePath || el.label);
+
+    const nextCap = await promptDialog({
+      title: `Edit Figure Caption (@${el.label})`,
+      message: 'Enter the figure caption (appears after "Figure #:" in the PDF):',
+      placeholder: 'Describe what this figure shows…',
+      defaultValue: defaultCap,
+      confirmLabel: 'Save Caption',
+    });
+    if (nextCap === null) return;
+
+    const cleanNext = nextCap.trim();
+    const esc = (v: string) => v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    let updatedMd = normMd;
+
+    const explicitByLabelRe = new RegExp(
+      `!\\[(?:[^[\\]\\n]|\\[[^[\\]\\n]*\\])*\\]\\(([^)\\n]+)\\)([ \\t]*\\{[^}\\n]*#${esc(el.label)}(?![a-zA-Z0-9_.-])[^}\\n]*\\})(?:[ \\t]*\\n(?:[ \\t]*\\n)?(?:Caption|Figure):[ \\t]*.+?)?(?=\\n|$)`,
+      'i'
+    );
+    if (explicitByLabelRe.test(updatedMd)) {
+      updatedMd = updatedMd.replace(explicitByLabelRe, `![${cleanNext}]($1)$2`);
+    } else if (el.imagePath) {
+      const explicitByPathRe = new RegExp(
+        `!\\[(?:[^[\\]\\n]|\\[[^[\\]\\n]*\\])*\\]\\((${esc(el.imagePath)})\\)([ \\t]*\\{[^}\\n]*\\})?(?:[ \\t]*\\n(?:[ \\t]*\\n)?(?:Caption|Figure):[ \\t]*.+?)?(?=\\n|$)`,
+        'i'
+      );
+      if (explicitByPathRe.test(updatedMd)) {
+        updatedMd = updatedMd.replace(
+          explicitByPathRe,
+          (_m, p: string, attrs?: string) => `![${cleanNext}](${p})${attrs ?? ''}`
+        );
+      } else {
+        const standaloneRe = new RegExp(
+          `^@${esc(el.label)}(?:\\s*\\{([^}]*)\\})?(?:\\s*:\\s*.+?|\\s+\\[[^\\]]+\\])?(?:\\s*\\n(?:[ \\t]*\\n)?(?:Caption|Figure):\\s*.+?)?$`,
+          'im'
+        );
+        updatedMd = updatedMd.replace(
+          standaloneRe,
+          `![${cleanNext}](${el.imagePath}){#${el.label} width=0.85}`
+        );
+      }
+    } else {
+      const standaloneNoPathRe = new RegExp(
+        `^@${esc(el.label)}(\\s*\\{[^}]*\\})?(?:\\s*:\\s*.+?|\\s+\\[[^\\]]+\\])?$`,
+        'im'
+      );
+      updatedMd = updatedMd.replace(
+        standaloneNoPathRe,
+        (_m, attrs?: string) => `@${el.label}${attrs ?? ''}: ${cleanNext}`
+      );
+    }
+
+    store.updateSectionMarkdownAction(el.sectionId, updatedMd);
   };
 
   const handleRename = async (secId: string, currentTitle: string) => {
@@ -361,10 +473,10 @@ export function Sidebar() {
           ) : (
             indexedElements.map((el) => (
               <div
-                key={`${el.kind}-${el.label}-${el.number}`}
+                key={`${el.kind}-${el.label}-${el.imagePath || el.number}`}
                 className="element-row"
-                onClick={() => insertIntoEditor(`@${el.label}`)}
-                title={`Click to insert @${el.label} (${el.sectionTitle})`}
+                onClick={() => insertIntoEditor(`@${el.label} `)}
+                title={`Click to refer to @${el.label} in text (${el.sectionTitle})`}
               >
                 {el.kind === 'figure' ? (
                   <Image size={13} />
@@ -375,6 +487,32 @@ export function Sidebar() {
                 )}
                 <span className="element-label-code">@{el.label}</span>
                 <span className="binder-row-title">{el.title}</span>
+                {el.kind === 'figure' && el.sectionId === 'figures-folder' && el.imagePath && (
+                  <button
+                    type="button"
+                    className="element-action-btn"
+                    title="Insert this figure into the active section with a caption"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void handleSidebarInsertFigure(el);
+                    }}
+                  >
+                    + Insert
+                  </button>
+                )}
+                {el.kind === 'figure' && el.sectionId !== 'figures-folder' && (
+                  <button
+                    type="button"
+                    className="element-action-btn"
+                    title="Edit figure caption"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void handleSidebarEditCaption(el);
+                    }}
+                  >
+                    Caption
+                  </button>
+                )}
               </div>
             ))
           )}

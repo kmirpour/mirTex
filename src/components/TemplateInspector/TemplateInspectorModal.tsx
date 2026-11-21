@@ -7,7 +7,7 @@ import type { ExtractedSlot } from '../../types/latex';
 export function TemplateInspectorModal() {
   const open = usePaperStore((s) => s.templateInspectorOpen);
   const setOpen = usePaperStore((s) => s.setTemplateInspectorOpen);
-  const project = usePaperStore((s) => s.project);
+  const project = usePaperStore((s) => (s.templateInspectorOpen ? s.project : null));
   const activeManifest = usePaperStore((s) => s.activeManifest);
   const customTemplates = usePaperStore((s) => s.customTemplates);
   const importLatexTemplateAction = usePaperStore((s) => s.importLatexTemplateAction);
@@ -18,16 +18,16 @@ export function TemplateInspectorModal() {
 
   const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
 
-  const allTemplates = useMemo(
-    () => getAllAvailableTemplates(usePaperStore.getState()),
+  const allTemplates = useMemo(() => {
+    if (!open) return [];
+    return getAllAvailableTemplates(usePaperStore.getState());
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [customTemplates]
-  );
+  }, [open, customTemplates]);
 
   const resolvedMap = useMemo(() => {
-    if (!project) return {};
+    if (!open || !project) return {};
     return resolveSlotMapping(activeManifest, project.sections, project.templateSlotMap);
-  }, [activeManifest, project]);
+  }, [open, activeManifest, project]);
 
   if (!open) return null;
 

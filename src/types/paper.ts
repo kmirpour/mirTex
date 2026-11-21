@@ -91,6 +91,13 @@ export interface ExtraNoteFile {
   path: string;
 }
 
+export interface ProjectFigureFile {
+  name: string;
+  relPath: string;
+  label: string;
+  title: string;
+}
+
 export interface PaperComment {
   id: string;
   quote: string;

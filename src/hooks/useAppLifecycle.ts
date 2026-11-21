@@ -1,12 +1,18 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { isTauri } from '../services/fileService';
-import { usePaperStore, getActiveSection } from '../stores/paperStore';
+import { usePaperStore } from '../stores/paperStore';
 
 export function useAppLifecycle() {
-  const project = usePaperStore((s) => s.project);
-  const activeTarget = usePaperStore((s) => s.activeTarget);
+  const hasProject = usePaperStore((s) => Boolean(s.project));
+  const projectName = usePaperStore((s) => s.project?.name ?? '');
+  const activeSectionTitle = usePaperStore((s) =>
+    s.activeTarget === 'frontmatter'
+      ? 'Front Page'
+      : (s.project?.sections.find((sec) => sec.id === s.activeTarget)?.title ?? '')
+  );
   const isDirty = usePaperStore((s) => s.isDirty);
+  const lastTitleRef = useRef<string>('');
 
   // Detect TeX Live toolchain and Zotero 10 on startup
   useEffect(() => {
@@ -15,18 +21,17 @@ export function useAppLifecycle() {
     void store.pingZoteroAction();
   }, []);
 
-  // Sync window title
+  // Sync window title only when it actually changes
   useEffect(() => {
-    const sec = getActiveSection(usePaperStore.getState());
-    const sectionPart =
-      activeTarget === 'frontmatter' ? 'Front Page' : sec?.title || '';
     const dirtyDot = isDirty ? ' •' : '';
-    const title = project
-      ? `${sectionPart ? `${sectionPart} — ` : ''}${project.name}${dirtyDot} — MirTex`
+    const title = hasProject
+      ? `${activeSectionTitle ? `${activeSectionTitle} — ` : ''}${projectName}${dirtyDot} — MirTex`
       : 'MirTex — Scientific Paper Studio';
+    if (lastTitleRef.current === title) return;
+    lastTitleRef.current = title;
     document.title = title;
     if (isTauri()) {
       void getCurrentWindow().setTitle(title).catch(() => {});
     }
-  }, [project, activeTarget, isDirty]);
+  }, [hasProject, projectName, activeSectionTitle, isDirty]);
 }

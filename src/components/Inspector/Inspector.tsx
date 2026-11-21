@@ -1,32 +1,80 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { Camera, Check, Eye, RotateCcw, SlidersHorizontal, Trash2, X } from 'lucide-react';
 import {
   usePaperStore,
   getActiveSection,
   SECTION_STATUS_LABELS,
 } from '../../stores/paperStore';
-import { SECTION_ROLE_LABELS, type PaperSnapshot, type SectionRole, type SectionStatus } from '../../types/paper';
+import {
+  SECTION_ROLE_LABELS,
+  type PaperComment,
+  type PaperSnapshot,
+  type SectionRole,
+  type SectionStatus,
+} from '../../types/paper';
 import { diffLines } from '../../utils/textDiff';
 import './Inspector.css';
 
+const EMPTY_COMMENTS: PaperComment[] = [];
+const EMPTY_SNAPSHOTS: PaperSnapshot[] = [];
+
 export function Inspector() {
-  const state = usePaperStore();
+  const inspectorOpen = usePaperStore((st) => st.inspectorOpen);
+  if (!inspectorOpen) return null;
+  return <InspectorContent />;
+}
+
+function InspectorContent() {
+  const state = usePaperStore(
+    useShallow((st) => {
+      const activeSec = getActiveSection(st);
+      return {
+        setInspectorOpen: st.setInspectorOpen,
+        activeSecId: activeSec?.id ?? null,
+        activeSecPath: activeSec?.path ?? '',
+        activeSecRole: activeSec?.role ?? null,
+        activeSecStarred: Boolean(activeSec?.starred),
+        activeSecStatus: activeSec?.status ?? null,
+        activeSecWordCount: activeSec?.wordCount || 0,
+        activeSecWordLimit: activeSec?.wordLimit || 0,
+        activeSecNotes: activeSec?.notes || '',
+        comments:
+          activeSec && st.project
+            ? st.project.comments[activeSec.fileName] || EMPTY_COMMENTS
+            : EMPTY_COMMENTS,
+        allSnapshots: st.project?.snapshots || EMPTY_SNAPSHOTS,
+        updateSectionMeta: st.updateSectionMeta,
+        addCommentAction: st.addCommentAction,
+        updateCommentAction: st.updateCommentAction,
+        deleteCommentAction: st.deleteCommentAction,
+        createSnapshotAction: st.createSnapshotAction,
+        restoreSnapshotAction: st.restoreSnapshotAction,
+        deleteSnapshotAction: st.deleteSnapshotAction,
+      };
+    })
+  );
+
   const [commentText, setCommentText] = useState('');
   const [snapLabel, setSnapLabel] = useState('');
   const [diffSnap, setDiffSnap] = useState<PaperSnapshot | null>(null);
 
-  if (!state.inspectorOpen) return null;
+  const currentMd = usePaperStore((st) =>
+    diffSnap && state.activeSecId ? (st.sectionContents[state.activeSecId] ?? '') : ''
+  );
 
-  const activeSec = getActiveSection(state);
-  const currentMd = activeSec ? state.sectionContents[activeSec.id] ?? '' : '';
-  const comments = activeSec && state.project ? state.project.comments[activeSec.fileName] || [] : [];
-  const snapshots = activeSec
-    ? (state.project?.snapshots || []).filter((s) => s.sectionPath === activeSec.path)
-    : [];
+  const snapshots = useMemo(
+    () =>
+      state.activeSecPath
+        ? state.allSnapshots.filter((s) => s.sectionPath === state.activeSecPath)
+        : EMPTY_SNAPSHOTS,
+    [state.allSnapshots, state.activeSecPath]
+  );
 
-  const words = activeSec?.wordCount || 0;
-  const limit = activeSec?.wordLimit || 0;
+  const words = state.activeSecWordCount;
+  const limit = state.activeSecWordLimit;
   const pct = limit > 0 ? Math.min(100, Math.round((words / limit) * 100)) : 0;
+  const { activeSecId, comments } = state;
 
   return (
     <aside className="inspector-panel" aria-label="Section Inspector">
@@ -45,7 +93,7 @@ export function Inspector() {
       </div>
 
       <div className="inspector-body">
-        {!activeSec ? (
+        {!activeSecId ? (
           <div style={{ fontSize: 12.5, color: 'var(--text-muted)', lineHeight: 1.55 }}>
             Editing <strong>Front Page</strong>. Select any paper section in the sidebar to edit its
             LaTeX role, word budget, revision comments, and snapshots.
@@ -57,9 +105,9 @@ export function Inspector() {
               <label className="inspector-label">LaTeX Section Role</label>
               <select
                 className="mirtex-select"
-                value={activeSec.role}
+                value={state.activeSecRole ?? 'custom'}
                 onChange={(e) =>
-                  state.updateSectionMeta(activeSec.id, { role: e.target.value as SectionRole })
+                  state.updateSectionMeta(activeSecId, { role: e.target.value as SectionRole })
                 }
               >
                 {Object.entries(SECTION_ROLE_LABELS).map(([k, lbl]) => (
@@ -71,9 +119,9 @@ export function Inspector() {
               <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, marginTop: 2 }}>
                 <input
                   type="checkbox"
-                  checked={Boolean(activeSec.starred)}
+                  checked={state.activeSecStarred}
                   onChange={(e) =>
-                    state.updateSectionMeta(activeSec.id, { starred: e.target.checked })
+                    state.updateSectionMeta(activeSecId, { starred: e.target.checked })
                   }
                 />
                 Unnumbered section (<code>\section*</code>)
@@ -88,8 +136,8 @@ export function Inspector() {
                   <button
                     key={st}
                     type="button"
-                    className={`status-pill-btn ${activeSec.status === st ? 'active' : ''}`}
-                    onClick={() => state.updateSectionMeta(activeSec.id, { status: st })}
+                    className={`status-pill-btn ${state.activeSecStatus === st ? 'active' : ''}`}
+                    onClick={() => state.updateSectionMeta(activeSecId, { status: st })}
                   >
                     {SECTION_STATUS_LABELS[st]}
                   </button>
@@ -109,7 +157,7 @@ export function Inspector() {
                 value={limit || ''}
                 onChange={(e) => {
                   const v = parseInt(e.target.value, 10);
-                  state.updateSectionMeta(activeSec.id, {
+                  state.updateSectionMeta(activeSecId, {
                     wordLimit: Number.isNaN(v) || v <= 0 ? undefined : v,
                   });
                 }}
@@ -135,8 +183,8 @@ export function Inspector() {
               <textarea
                 className="mirtex-textarea"
                 placeholder="Key claims, target figures, reviewer checklist…"
-                value={activeSec.notes || ''}
-                onChange={(e) => state.updateSectionMeta(activeSec.id, { notes: e.target.value })}
+                value={state.activeSecNotes}
+                onChange={(e) => state.updateSectionMeta(activeSecId, { notes: e.target.value })}
               />
             </div>
 

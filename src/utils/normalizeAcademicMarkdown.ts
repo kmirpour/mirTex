@@ -10,13 +10,23 @@
 export function normalizeAcademicMarkdown(markdown: string): string {
   if (!markdown) return '';
 
-  // Protect fenced code blocks from normalization
+  // Protect fenced code blocks and inline code spans from normalization
   const fences: string[] = [];
   let text = markdown.replace(/\r\n/g, '\n').replace(/```[\s\S]*?```/g, (block) => {
     const idx = fences.length;
     fences.push(block);
     return `\uE010FENCE${idx}\uE011`;
   });
+
+  const inlineCodes: string[] = [];
+  text = text.replace(/`[^`\n]+`/g, (span) => {
+    const idx = inlineCodes.length;
+    inlineCodes.push(span);
+    return `\uE010CODE${idx}\uE011`;
+  });
+
+  // Decode TipTap HTML entities (&lt;, &gt;, &amp;, &quot;) across prose, captions, tables, and math
+  text = decodeBasicHtmlEntities(text);
 
   // 1. Display math $$ ... $$ (multi-line or single-line)
   text = text.replace(/\$\$([\s\S]*?)\$\$/g, (_m, inner: string) => {
@@ -28,30 +38,37 @@ export function normalizeAcademicMarkdown(markdown: string): string {
     return `$${unescapeMathInner(inner)}$`;
   });
 
-  // 3. Figure embeds: !\[Caption\](figures/my\_fig.png){#fig:my\_fig width=0.8}
+  // 3. Figure embeds (supporting nested [...] tags inside captions and TipTap escapes)
   text = text.replace(
-    /\\?!\\?\[([^\]]*)\\?\]\(([^)]+)\)(?:\\?\{([^}]*)\\?\})?/g,
+    /\\?!\\?\[((?:\\[^\n]|[^\\[\]\n]|\[(?:\\[^\n]|[^\\[\]\n])*\])*?)\\?\]\(([^)\n]+)\)(?:\\?\{([^}\n]*?)\\?\})?/g,
     (_m, caption: string, imgPath: string, attrs?: string) => {
-      const cleanCap = caption.replace(/\\([\\`*_[\]~])/g, '$1');
-      const cleanPath = imgPath.replace(/\\([_~-])/g, '$1');
+      const capMath: string[] = [];
+      const capProtected = caption.replace(/(?<!\\)\$(?!\$)([^$\n]+?)(?<!\\)\$/g, (m) => {
+        const idx = capMath.length;
+        capMath.push(m);
+        return `\uE010CMATH${idx}\uE011`;
+      });
+      const cleanCap = capProtected
+        .replace(/\\([\\`*_[\]~])/g, '$1')
+        .replace(/\\$/, '')
+        .replace(/\uE010CMATH(\d+)\uE011/g, (_mm, idxStr: string) => capMath[Number(idxStr)] ?? '');
+      const cleanPath = imgPath.replace(/\\([_~-])/g, '$1').replace(/\\$/, '');
       if (attrs !== undefined) {
-        const cleanAttrs = attrs.replace(/\\([_~#-])/g, '$1');
+        const cleanAttrs = attrs.replace(/\\([_~#-])/g, '$1').replace(/\\$/, '');
         return `![${cleanCap}](${cleanPath}){${cleanAttrs}}`;
       }
       return `![${cleanCap}](${cleanPath})`;
     }
   );
 
-  // 4. Bracketed citations: \[@Chilukuri\_2026; @Mirpour\_2024\]
-  text = text.replace(
-    /\\?\[((?:\\.|[^\]])*@[a-zA-Z0-9_.:\\+-]+(?:\\.|[^\]])*)\\?\]/g,
-    (_m, inner: string) => {
-      const cleaned = inner
-        .replace(/\\([_~*[\]-])/g, '$1')
-        .replace(/\\$/, '');
-      return `[${cleaned}]`;
-    }
-  );
+  // 4. Bracketed citations: \[@Chilukuri\_2026; @Mirpour\_2024\] (linear-time, no backtracking)
+  text = text.replace(/\\?\[([^[\]\n]+?)\\?\]/g, (full, inner: string) => {
+    if (!/@[a-zA-Z0-9_.:+-]/.test(inner)) return full;
+    const cleaned = inner
+      .replace(/\\([_~*[\]-])/g, '$1')
+      .replace(/\\$/, '');
+    return `[${cleaned}]`;
+  });
 
   // 5. Cross-references & narrative citations: @fig:my\_plot, @Mirpour\_2024
   text = text.replace(
@@ -62,11 +79,15 @@ export function normalizeAcademicMarkdown(markdown: string): string {
   );
 
   // 6. Attribute blocks: {#eq:my\_eq}, {#tbl:my\_tbl}, {#sec:my\_sec}
-  text = text.replace(/\\?\{#([a-zA-Z0-9_.:\\-]+(?:[^}]*))\\?\}/g, (_m, inner: string) => {
-    return `{#${inner.replace(/\\([_-])/g, '$1')}}`;
+  text = text.replace(/\\?\{#([^}\s\n][^}\n]*?)\\?\}/g, (_m, inner: string) => {
+    return `{#${inner.replace(/\\([_-])/g, '$1').replace(/\\$/, '')}}`;
   });
 
-  // Restore fenced code blocks
+  // Restore inline code spans and fenced code blocks
+  text = text.replace(
+    /\uE010CODE(\d+)\uE011/g,
+    (_m, idx: string) => inlineCodes[Number(idx)] ?? ''
+  );
   text = text.replace(/\uE010FENCE(\d+)\uE011/g, (_m, idx: string) => fences[Number(idx)] ?? '');
 
   return text;

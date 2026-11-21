@@ -40,6 +40,7 @@ import {
   BookMarked,
 } from 'lucide-react';
 import { usePaperStore } from '../../stores/paperStore';
+import { promptDialog } from '../../services/dialogs';
 import { ThemeToggle } from '../ThemeToggle/ThemeToggle';
 import type { ViewMode } from '../../services/settings';
 import './Toolbar.css';
@@ -105,8 +106,31 @@ export function Toolbar() {
 
   const handleInsertFigure = async () => {
     const res = await s.importFigureAction();
-    if (!res || !s.editor) return;
-    insertSnippet(`\n![Figure caption here.](${res.relPath}){#${res.label} width=0.85}\n`);
+    if (!res || !s.editor || !canFormat) return;
+    const caption = await promptDialog({
+      title: `Insert Figure (${res.relPath})`,
+      message: 'Enter the figure caption (appears after "Figure #:" in the PDF):',
+      placeholder: 'Describe what this figure shows…',
+      defaultValue: '',
+      confirmLabel: 'Insert Figure',
+    });
+    if (s.editor.isDestroyed) return;
+    const capText = (caption ?? '').trim();
+    const embedLine = `![${capText}](${res.relPath}){#${res.label} width=0.85}`;
+    const { $from } = s.editor.state.selection;
+    if ($from.parent.textContent.trim().length === 0) {
+      s.editor.chain().focus().insertContent({ type: 'text', text: embedLine }).run();
+    } else {
+      const insertPos = $from.depth > 0 ? $from.after() : s.editor.state.doc.content.size;
+      s.editor
+        .chain()
+        .focus()
+        .insertContentAt(insertPos, {
+          type: 'paragraph',
+          content: [{ type: 'text', text: embedLine }],
+        })
+        .run();
+    }
   };
 
   const handleInsertTable = () => {

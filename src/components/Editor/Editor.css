@@ -103,6 +103,29 @@
   color: var(--text-color);
 }
 
+.editor-surface .tiptap table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1em 0;
+  font-size: 0.88em;
+  line-height: 1.45;
+  overflow: hidden;
+}
+
+.editor-surface .tiptap th,
+.editor-surface .tiptap td {
+  border: 1px solid var(--border-color);
+  padding: 6px 10px;
+  vertical-align: top;
+  text-align: left;
+}
+
+.editor-surface .tiptap th {
+  background: var(--bg-sidebar);
+  font-weight: 600;
+  color: var(--editor-heading);
+}
+
 .editor-surface .tiptap p.is-editor-empty:first-child::before {
   content: attr(data-placeholder);
   float: left;
@@ -138,7 +161,8 @@
 .trigger-popup {
   position: fixed;
   z-index: var(--z-popover);
-  width: 360px;
+  width: 420px;
+  max-width: calc(100vw - 24px);
   max-height: 290px;
   overflow-y: auto;
   background: var(--bg-card);
@@ -194,6 +218,24 @@
   display: flex;
   justify-content: space-between;
   gap: 8px;
+}
+
+.trigger-popup-embed-btn {
+  border: 1px solid var(--border-color);
+  background: var(--bg-app);
+  color: var(--text-color);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 10.5px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.trigger-popup-embed-btn:hover {
+  background: var(--accent-color);
+  border-color: var(--accent-color);
+  color: #ffffff;
 }
 
 .spin {

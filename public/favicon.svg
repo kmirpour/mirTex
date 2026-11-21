@@ -1,5 +1,28 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
-  <rect width="64" height="64" rx="14" fill="#8b683e"/>
-  <path d="M16 46V18h7l9 15 9-15h7v28h-6.5V29.5L34.2 41h-4.4L22.5 29.5V46H16z" fill="#fcfbf9"/>
-  <circle cx="51" cy="14" r="4" fill="#e5ded2"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="pageBg" x1="256" y1="36" x2="256" y2="476" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFEFB" />
+      <stop offset="55%" stop-color="#F9F7F1" />
+      <stop offset="100%" stop-color="#EEEAE0" />
+    </linearGradient>
+    <linearGradient id="amberFold" x1="364" y1="36" x2="476" y2="148" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#B6803E" />
+      <stop offset="100%" stop-color="#96642A" />
+    </linearGradient>
+    <clipPath id="pageClip">
+      <path d="M 132 36 L 364 36 L 476 148 L 476 380 A 96 96 0 0 1 380 476 L 132 476 A 96 96 0 0 1 36 380 L 36 132 A 96 96 0 0 1 132 36 Z" />
+    </clipPath>
+  </defs>
+
+  <path d="M 132 36 L 364 36 L 476 148 L 476 380 A 96 96 0 0 1 380 476 L 132 476 A 96 96 0 0 1 36 380 L 36 132 A 96 96 0 0 1 132 36 Z" fill="url(#pageBg)" />
+
+  <path d="M 382 146 L 476 148 L 476 226 L 396 148 Z" fill="#DDD6C6" fill-opacity="0.55" clip-path="url(#pageClip)" />
+
+  <path d="M 476 148 L 476 380 A 96 96 0 0 1 380 476 L 132 476 A 96 96 0 0 1 36 380 L 36 132 A 96 96 0 0 1 132 36 L 364 36" fill="none" stroke="#CFC7B7" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />
+
+  <path d="M 364 33 L 364 116 Q 364 148 396 148 L 479 148 Z" fill="url(#amberFold)" />
+
+  <path d="M 122 152 L 188 152 L 260 278 L 330 152 L 390 152 L 390 162 C 368 164 360 172 360 192 L 360 326 C 360 346 368 354 394 356 L 394 366 L 298 366 L 298 356 C 320 354 326 346 326 326 L 326 200 L 264 314 L 248 314 L 174 192 L 174 326 C 174 346 182 354 206 356 L 206 366 L 118 366 L 118 356 C 144 354 152 346 152 326 L 152 192 C 152 172 144 164 122 162 Z" fill="#1B2330" />
+
+  <circle cx="256" cy="352" r="16" fill="url(#amberFold)" />
 </svg>

@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { ExternalLink, FileText, Loader2, Play, Terminal } from 'lucide-react';
-import { usePaperStore, getActiveSection } from '../../stores/paperStore';
+import { usePaperStore } from '../../stores/paperStore';
 import { renderAcademicPreviewHtml } from '../../utils/academicMarkdown';
 import { openPathExternal } from '../../services/fileService';
 import './Preview.css';
@@ -17,6 +17,7 @@ export function Preview({ mode, fullPaper = false }: PreviewProps) {
   const activeTarget = usePaperStore((s) => s.activeTarget);
   const bibEntries = usePaperStore((s) => s.bibEntries);
   const citationStyle = usePaperStore((s) => s.citationStyle);
+  const projectFigures = usePaperStore((s) => s.projectFigures);
   const figureDataUrls = usePaperStore((s) => s.figureDataUrls);
   const lastCompileResult = usePaperStore((s) => s.lastCompileResult);
   const isCompilingPdf = usePaperStore((s) => s.isCompilingPdf);
@@ -46,42 +47,55 @@ export function Preview({ mode, fullPaper = false }: PreviewProps) {
     };
   }, [pdfBlobUrl]);
 
-  const activeSec = getActiveSection(usePaperStore.getState());
+  const deferredProject = useDeferredValue(project);
+  const deferredFrontMatter = useDeferredValue(frontMatter);
+  const deferredSectionContents = useDeferredValue(sectionContents);
 
   const renderedHtml = useMemo(() => {
-    if (mode !== 'academic' || !project) return '';
+    if (mode !== 'academic' || !deferredProject) return '';
     const useWhole = fullPaper || showWholePaper || activeTarget === 'frontmatter';
+    const activeSec =
+      activeTarget !== 'frontmatter'
+        ? deferredProject.sections.find((s) => s.id === activeTarget) ?? null
+        : null;
     const targetSections = useWhole
-      ? project.sections.map((s) => ({
+      ? deferredProject.sections.map((s) => ({
           id: s.id,
           title: s.title,
-          markdown: sectionContents[s.id] ?? '',
+          markdown: deferredSectionContents[s.id] ?? '',
         }))
       : activeSec
-        ? [{ id: activeSec.id, title: activeSec.title, markdown: sectionContents[activeSec.id] ?? '' }]
+        ? [
+            {
+              id: activeSec.id,
+              title: activeSec.title,
+              markdown: deferredSectionContents[activeSec.id] ?? '',
+            },
+          ]
         : [];
 
     return renderAcademicPreviewHtml({
-      frontMatter,
+      frontMatter: deferredFrontMatter,
       sections: targetSections,
       bibEntries,
       citationStyle,
       imageDataUrls: figureDataUrls,
+      projectFigures,
       includeFrontMatter: useWhole,
       includeReferences: true,
     });
   }, [
     mode,
-    project,
+    deferredProject,
     fullPaper,
     showWholePaper,
     activeTarget,
-    activeSec,
-    frontMatter,
-    sectionContents,
+    deferredFrontMatter,
+    deferredSectionContents,
     bibEntries,
     citationStyle,
     figureDataUrls,
+    projectFigures,
   ]);
 
   if (mode === 'pdf') {

@@ -22,14 +22,18 @@ import type { ZoteroCollection, ZoteroSearchItem } from '../../types/citation';
 
 type TabKind = 'library' | 'zotero' | 'quickadd' | 'audit';
 
+const EMPTY_SECTIONS: Record<string, string> = {};
+
 export function CitationModal() {
   const open = usePaperStore((s) => s.citationModalOpen);
   const setOpen = usePaperStore((s) => s.setCitationModalOpen);
   const bibEntries = usePaperStore((s) => s.bibEntries);
   const zoteroStatus = usePaperStore((s) => s.zoteroStatus);
   const zoteroPort = usePaperStore((s) => s.zoteroPort);
-  const project = usePaperStore((s) => s.project);
-  const sectionContents = usePaperStore((s) => s.sectionContents);
+  const project = usePaperStore((s) => (s.citationModalOpen ? s.project : null));
+  const sectionContents = usePaperStore((s) =>
+    s.citationModalOpen ? s.sectionContents : EMPTY_SECTIONS
+  );
   const editorInstance = usePaperStore((s) => s.editorInstance);
   const activeTarget = usePaperStore((s) => s.activeTarget);
   const pingZoteroAction = usePaperStore((s) => s.pingZoteroAction);
@@ -56,11 +60,22 @@ export function CitationModal() {
   const [rawBibInput, setRawBibInput] = useState('');
 
   const audit = useMemo(() => {
+    if (!open) {
+      return {
+        totalCitedKeys: 0,
+        totalLibraryEntries: bibEntries.length,
+        missingKeys: [],
+        unusedKeys: [],
+        usageCounts: {},
+        incompleteEntries: [],
+      };
+    }
     const mds = project ? project.sections.map((s) => sectionContents[s.id] ?? '') : [];
     return auditCitations(mds, bibEntries);
-  }, [project, sectionContents, bibEntries]);
+  }, [open, project, sectionContents, bibEntries]);
 
   const filteredLib = useMemo(() => {
+    if (!open) return [];
     const q = libFilter.trim().toLowerCase();
     if (!q) return bibEntries;
     return bibEntries.filter(
@@ -70,7 +85,7 @@ export function CitationModal() {
         (e.fields.author || '').toLowerCase().includes(q) ||
         (e.fields.year || '').includes(q)
     );
-  }, [bibEntries, libFilter]);
+  }, [open, bibEntries, libFilter]);
 
   if (!open) return null;
 

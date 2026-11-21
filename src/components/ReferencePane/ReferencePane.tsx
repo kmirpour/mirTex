@@ -9,6 +9,7 @@ export function ReferencePane() {
   const setReferenceSectionId = usePaperStore((s) => s.setReferenceSectionId);
   const bibEntries = usePaperStore((s) => s.bibEntries);
   const citationStyle = usePaperStore((s) => s.citationStyle);
+  const projectFigures = usePaperStore((s) => s.projectFigures);
   const figureDataUrls = usePaperStore((s) => s.figureDataUrls);
 
   const selectedSec =
@@ -21,10 +22,11 @@ export function ReferencePane() {
       bibEntries,
       citationStyle,
       imageDataUrls: figureDataUrls,
+      projectFigures,
       includeFrontMatter: false,
       includeReferences: false,
     });
-  }, [selectedSec, sectionContents, bibEntries, citationStyle, figureDataUrls]);
+  }, [selectedSec, sectionContents, bibEntries, citationStyle, figureDataUrls, projectFigures]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--bg-preview)' }}>

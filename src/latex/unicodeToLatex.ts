@@ -120,8 +120,12 @@ const TEXT_PUNCTUATION_MAP: Record<string, string> = {
   '\u200C': '',
   '\u200D': '',
   '\uFEFF': '',
+  '\u2010': '-', // Unicode hyphen U+2010
+  '\u2011': '-', // Non-breaking hyphen U+2011
+  '\u2012': '--', // Figure dash U+2012
   '–': '--',
   '—': '---',
+  '―': '---', // Horizontal bar U+2015
   '…': '\\ldots{}',
   '“': '``',
   '”': "''",
@@ -184,6 +188,9 @@ const MATH_SUP_SUB_MAP: Record<string, string> = {
   '\u2009': '\\,',
   '\u200B': '',
   '\uFEFF': '',
+  '\u2010': '-',
+  '\u2011': '-',
+  '\u2012': '-',
   '–': '-',
   '—': '-',
   '’': "'",
@@ -195,9 +202,10 @@ const MATH_SUP_SUB_MAP: Record<string, string> = {
  * text mode (prose, titles, keywords, BibTeX fields) into engine-independent LaTeX.
  */
 export function unicodeToLatexText(text: string): string {
+  const normalized = text.normalize('NFC');
   let out = '';
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
+  for (let i = 0; i < normalized.length; i++) {
+    const ch = normalized[i];
     if (ch in TEXT_PUNCTUATION_MAP) {
       out += TEXT_PUNCTUATION_MAP[ch];
     } else if (ch in MATH_SYMBOL_MAP) {
@@ -216,12 +224,13 @@ export function unicodeToLatexText(text: string): string {
  * words when immediately followed by an ASCII letter (e.g., `αx` -> `\alpha x`).
  */
 export function unicodeToLatexMath(expr: string): string {
+  const normalized = expr.normalize('NFC');
   let out = '';
-  for (let i = 0; i < expr.length; i++) {
-    const ch = expr[i];
+  for (let i = 0; i < normalized.length; i++) {
+    const ch = normalized[i];
     if (ch in MATH_SYMBOL_MAP) {
       const cmd = MATH_SYMBOL_MAP[ch];
-      const next = expr[i + 1] ?? '';
+      const next = normalized[i + 1] ?? '';
       const needsSpace = cmd.startsWith('\\') && /[a-zA-Z]$/.test(cmd) && /[a-zA-Z]/.test(next);
       out += needsSpace ? `${cmd} ` : cmd;
     } else if (ch in MATH_SUP_SUB_MAP) {

@@ -9,7 +9,7 @@ import {
   Play,
   X,
 } from 'lucide-react';
-import { usePaperStore } from '../../stores/paperStore';
+import { flushPendingEditorUpdate, usePaperStore } from '../../stores/paperStore';
 import { patchLatexTemplate } from '../../latex/templatePatcher';
 import {
   assembleLatexBuildDir,
@@ -28,6 +28,7 @@ export function ExportModal() {
   const sectionContents = usePaperStore((s) => s.sectionContents);
   const activeManifest = usePaperStore((s) => s.activeManifest);
   const bibEntries = usePaperStore((s) => s.bibEntries);
+  const projectFigures = usePaperStore((s) => s.projectFigures);
   const citationStyle = usePaperStore((s) => s.citationStyle);
   const isCompilingPdf = usePaperStore((s) => s.isCompilingPdf);
   const compilePdfAction = usePaperStore((s) => s.compilePdfAction);
@@ -49,8 +50,9 @@ export function ExportModal() {
       citationCommandOverride: project.citationCommandMode,
       citationStyle,
       bibFileName: 'references',
+      projectFigures,
     });
-  }, [open, project, activeManifest, frontMatter, sectionContents, citationStyle]);
+  }, [open, project, activeManifest, frontMatter, sectionContents, citationStyle, projectFigures]);
 
   if (!open || !project || !projectPath) return null;
 
@@ -70,6 +72,7 @@ export function ExportModal() {
         bibEntries,
         citationStyle,
         pruneUnusedBib: pruneBib,
+        projectFigures,
       });
       const blob = await buildOverleafZip({ projectPath, assembled, manifest: activeManifest });
       const saved = await saveBinaryAs(blob, `${baseName}_latex.zip`, {
@@ -93,18 +96,28 @@ export function ExportModal() {
   const handleExportDocx = async () => {
     setBusy(true);
     try {
+      flushPendingEditorUpdate();
+      await usePaperStore.getState().refreshFiguresAction();
+      const latest = usePaperStore.getState();
       const blob = await buildAcademicDocx({
-        frontMatter,
-        sections: project.sections,
-        sectionContents,
-        bibEntries,
-        citationStyle,
+        frontMatter: latest.frontMatter,
+        sections: (latest.project ?? project).sections,
+        sectionContents: latest.sectionContents,
+        bibEntries: latest.bibEntries,
+        citationStyle: latest.citationStyle,
+        imageDataUrls: latest.figureDataUrls,
+        projectFigures: latest.projectFigures,
+        projectPath: latest.projectPath ?? projectPath,
       });
       const saved = await saveBinaryAs(blob, `${baseName}.docx`, {
         name: 'Microsoft Word Document',
         extensions: ['docx'],
       });
       if (saved) setStatusMessage(`Exported Word manuscript: ${saved.name}`);
+    } catch (err) {
+      setStatusMessage(
+        `Word export failed: ${err instanceof Error ? err.message : String(err)}`
+      );
     } finally {
       setBusy(false);
     }

@@ -800,11 +800,29 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
         let _ = fs::remove_file(&tmp_path);
         return Err(format!("Failed to write file: {e}"));
     }
-    if let Err(e) = fs::rename(&tmp_path, path) {
-        let _ = fs::remove_file(&tmp_path);
-        return Err(format!("Failed to replace file: {e}"));
+
+    let mut rename_err = None;
+    for attempt in 0..4 {
+        match fs::rename(&tmp_path, path) {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                rename_err = Some(e);
+                if attempt < 3 {
+                    std::thread::sleep(Duration::from_millis(35 * (attempt as u64 + 1)));
+                }
+            }
+        }
     }
-    Ok(())
+
+    // OneDrive / antivirus file watchers on Windows can briefly hold rename locks on existing targets;
+    // fall back to direct in-place write before failing.
+    let _ = fs::remove_file(&tmp_path);
+    fs::write(path, bytes).map_err(|write_err| {
+        let r_err = rename_err
+            .map(|e| e.to_string())
+            .unwrap_or_else(|| "unknown rename error".to_string());
+        format!("Failed to replace file ({r_err}; direct write failed: {write_err})")
+    })
 }
 
 fn backup_dir_for(path: &Path) -> Option<PathBuf> {

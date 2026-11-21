@@ -10,6 +10,7 @@ export function PreFlightModal() {
   const frontMatter = usePaperStore((s) => s.frontMatter);
   const sectionContents = usePaperStore((s) => s.sectionContents);
   const bibEntries = usePaperStore((s) => s.bibEntries);
+  const projectFigures = usePaperStore((s) => s.projectFigures);
 
   const report = useMemo(() => {
     if (!open || !project) return null;
@@ -18,8 +19,9 @@ export function PreFlightModal() {
       sections: project.sections,
       sectionContents,
       bibEntries,
+      projectFigures,
     });
-  }, [open, project, frontMatter, sectionContents, bibEntries]);
+  }, [open, project, frontMatter, sectionContents, bibEntries, projectFigures]);
 
   if (!open || !report) return null;
 

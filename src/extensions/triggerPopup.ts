@@ -22,6 +22,15 @@ const INACTIVE: TriggerPopupState = {
   coords: null,
 };
 
+export const AcademicImageMarkdown = Extension.create({
+  name: 'mirtexAcademicImageMarkdown',
+  markdownTokenName: 'image',
+  parseMarkdown: (token, helpers) => {
+    const raw = token.raw || `![${token.text || ''}](${token.href || ''})`;
+    return helpers.createTextNode(raw);
+  },
+});
+
 /**
  * TipTap ProseMirror plugin that listens for:
  * - `[@query` -> opens inline Citation Picker
@@ -83,7 +92,7 @@ export const TriggerPopup = Extension.create({
 
             if (['ArrowDown', 'ArrowUp', 'Enter', 'Tab', 'Escape'].includes(event.key)) {
               const ev = new CustomEvent('mirtex-popup-keydown', {
-                detail: { key: event.key },
+                detail: { key: event.key, shiftKey: event.shiftKey },
                 cancelable: true,
                 bubbles: true,
               });
@@ -98,8 +107,31 @@ export const TriggerPopup = Extension.create({
           },
         },
         view(editorView) {
+          let wasActive = false;
+          let lastKind: PopupTriggerKind | null = null;
+          let lastQuery = '';
+          let lastFrom = -1;
+
           const notify = () => {
             const st = triggerPopupPluginKey.getState(editorView.state) || INACTIVE;
+            if (!st.active && !wasActive) {
+              return;
+            }
+            if (
+              st.active &&
+              wasActive &&
+              st.kind === lastKind &&
+              st.query === lastQuery &&
+              st.range.from === lastFrom
+            ) {
+              return;
+            }
+
+            wasActive = st.active;
+            lastKind = st.kind;
+            lastQuery = st.query;
+            lastFrom = st.active ? st.range.from : -1;
+
             let coords = st.coords;
             if (st.active) {
               try {
@@ -116,9 +148,12 @@ export const TriggerPopup = Extension.create({
           return {
             update: notify,
             destroy: () => {
-              editorView.dom.dispatchEvent(
-                new CustomEvent('mirtex-popup-update', { detail: INACTIVE })
-              );
+              if (wasActive) {
+                wasActive = false;
+                editorView.dom.dispatchEvent(
+                  new CustomEvent('mirtex-popup-update', { detail: INACTIVE })
+                );
+              }
             },
           };
         },

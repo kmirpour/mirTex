@@ -38,7 +38,7 @@ export function Welcome() {
     <div className="welcome-overlay">
       <div className="welcome-card">
         <div className="welcome-brand">
-          <div className="welcome-logo">M</div>
+          <img src="/favicon.svg" alt="MirTex" className="welcome-logo" />
           <div>
             <h1 style={{ fontSize: 22, color: 'var(--heading-color)' }}>MirTex</h1>
             <p style={{ fontSize: 13.5, color: 'var(--text-muted)' }}>

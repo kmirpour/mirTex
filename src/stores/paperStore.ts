@@ -7,6 +7,7 @@ import {
   type PaperProject,
   type PaperSection,
   type PaperSnapshot,
+  type ProjectFigureFile,
   type SectionRole,
   type SectionStatus,
 } from '../types/paper';
@@ -29,7 +30,7 @@ import { BUILTIN_TEMPLATES, getBuiltinTemplateManifest } from '../latex/builtinT
 import { mergeBibEntries, parseBibTeX, serializeBibLibrary } from '../citations/bibtex';
 import { fetchBibtexByIdentifier, pingZotero } from '../citations/zoteroService';
 import { assembleLatexBuildDir } from '../export/exportPaper';
-import { countAcademicWords, extractSubsections } from '../utils/paperOutline';
+import { countAcademicWords, extractSubsections, figureLabelFromFileName } from '../utils/paperOutline';
 import { confirmDialog, promptDialog } from '../services/dialogs';
 
 export type ActiveDocumentTarget = 'frontmatter' | string; // 'frontmatter' or section.id
@@ -59,6 +60,7 @@ export interface PaperStoreState {
   isCompilingPdf: boolean;
   lastCompileResult: LatexCompileResult | null;
   lastBuildTexPath: string | null;
+  projectFigures: ProjectFigureFile[];
   figureDataUrls: Record<string, string>;
 
   // Git
@@ -139,7 +141,9 @@ export interface PaperStoreState {
   startDemoPaperAction: (preset?: PaperProject['preset']) => Promise<void>;
   selectTarget: (target: ActiveDocumentTarget) => Promise<void>;
   setReferenceSectionId: (id: string | null) => void;
+  markDirtyAction: () => void;
   updateActiveMarkdown: (markdown: string) => void;
+  updateSectionMarkdownAction: (sectionId: string, markdown: string) => void;
   saveActiveAction: () => Promise<boolean>;
   saveAllAction: () => Promise<boolean>;
   updateFrontMatter: (updater: (prev: PaperFrontMatter) => PaperFrontMatter) => void;
@@ -199,7 +203,7 @@ function decorateSections(
     return {
       ...sec,
       wordCount: countAcademicWords(md),
-      subsections: extractSubsections(md),
+      subsections: extractSubsections(md, sec.title),
     };
   });
 }
@@ -219,7 +223,30 @@ function mimeForExt(fileName: string): string {
   return 'application/octet-stream';
 }
 
+const FIGURE_EXTS = new Set([
+  'png',
+  'jpg',
+  'jpeg',
+  'svg',
+  'webp',
+  'gif',
+  'pdf',
+  'eps',
+  'tif',
+  'tiff',
+]);
+const PREVIEW_IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'svg', 'webp', 'gif']);
+
 let statusTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingEditorFlush: (() => void) | null = null;
+
+export function registerPendingEditorFlush(fn: (() => void) | null): void {
+  pendingEditorFlush = fn;
+}
+
+export function flushPendingEditorUpdate(): void {
+  pendingEditorFlush?.();
+}
 
 export const usePaperStore = create<PaperStoreState>((set, get) => ({
   projectPath: null,
@@ -243,6 +270,7 @@ export const usePaperStore = create<PaperStoreState>((set, get) => ({
   isCompilingPdf: false,
   lastCompileResult: null,
   lastBuildTexPath: null,
+  projectFigures: [],
   figureDataUrls: {},
 
   gitChangedFiles: null,
@@ -286,7 +314,10 @@ export const usePaperStore = create<PaperStoreState>((set, get) => ({
       statusTimer = setTimeout(() => set({ statusMessage: null }), 4500);
     }
   },
-  setSelectedWordCount: (selectedWordCount) => set({ selectedWordCount }),
+  setSelectedWordCount: (selectedWordCount) => {
+    if (get().selectedWordCount === selectedWordCount) return;
+    set({ selectedWordCount });
+  },
   setSidebarTab: (sidebarTab) => set({ sidebarTab }),
 
   setTheme: (theme) => {
@@ -372,9 +403,18 @@ export const usePaperStore = create<PaperStoreState>((set, get) => ({
   },
 
   setTemplateInspectorOpen: (templateInspectorOpen) => set({ templateInspectorOpen }),
-  setExportModalOpen: (exportModalOpen) => set({ exportModalOpen }),
-  setCitationModalOpen: (citationModalOpen) => set({ citationModalOpen }),
-  setPreFlightOpen: (preFlightOpen) => set({ preFlightOpen }),
+  setExportModalOpen: (exportModalOpen) => {
+    if (exportModalOpen) flushPendingEditorUpdate();
+    set({ exportModalOpen });
+  },
+  setCitationModalOpen: (citationModalOpen) => {
+    if (citationModalOpen) flushPendingEditorUpdate();
+    set({ citationModalOpen });
+  },
+  setPreFlightOpen: (preFlightOpen) => {
+    if (preFlightOpen) flushPendingEditorUpdate();
+    set({ preFlightOpen });
+  },
   setStructureBoardOpen: (structureBoardOpen) => set({ structureBoardOpen }),
   setFindReplaceOpen: (findReplaceOpen) => set({ findReplaceOpen }),
   setCommandPaletteOpen: (commandPaletteOpen) => set({ commandPaletteOpen }),
@@ -418,6 +458,8 @@ export const usePaperStore = create<PaperStoreState>((set, get) => ({
         isDirty: false,
         lastSavedAt: Date.now(),
         lastCompileResult: null,
+        projectFigures: [],
+        figureDataUrls: {},
         recentProjects: updatedSettings.recentProjects,
       });
 
@@ -440,6 +482,7 @@ export const usePaperStore = create<PaperStoreState>((set, get) => ({
   },
 
   selectTarget: async (target) => {
+    flushPendingEditorUpdate();
     if (get().isDirty) {
       await get().saveActiveAction();
     }
@@ -448,13 +491,17 @@ export const usePaperStore = create<PaperStoreState>((set, get) => ({
 
   setReferenceSectionId: (referenceSectionId) => set({ referenceSectionId }),
 
+  markDirtyAction: () => {
+    if (!get().isDirty) set({ isDirty: true });
+  },
+
   updateActiveMarkdown: (markdown) => {
     const { activeTarget, project, sectionContents } = get();
     if (!project || activeTarget === 'frontmatter') return;
     const nextContents = { ...sectionContents, [activeTarget]: markdown };
     const nextSections = project.sections.map((s) =>
       s.id === activeTarget
-        ? { ...s, wordCount: countAcademicWords(markdown), subsections: extractSubsections(markdown) }
+        ? { ...s, wordCount: countAcademicWords(markdown), subsections: extractSubsections(markdown, s.title) }
         : s
     );
     set({
@@ -464,7 +511,31 @@ export const usePaperStore = create<PaperStoreState>((set, get) => ({
     });
   },
 
+  updateSectionMarkdownAction: (sectionId, markdown) => {
+    const { project, sectionContents, activeTarget } = get();
+    if (!project) return;
+    if (sectionId === activeTarget) {
+      get().updateActiveMarkdown(markdown);
+      return;
+    }
+    const nextContents = { ...sectionContents, [sectionId]: markdown };
+    const nextSections = project.sections.map((s) =>
+      s.id === sectionId
+        ? { ...s, wordCount: countAcademicWords(markdown), subsections: extractSubsections(markdown, s.title) }
+        : s
+    );
+    set({
+      sectionContents: nextContents,
+      project: { ...project, sections: nextSections },
+    });
+    const sec = project.sections.find((s) => s.id === sectionId);
+    if (sec) {
+      void fileService.saveFile(sec.path, markdown);
+    }
+  },
+
   saveActiveAction: async () => {
+    flushPendingEditorUpdate();
     const { projectPath, project, activeTarget, sectionContents, frontMatter } = get();
     if (!projectPath || !project) return false;
     try {
@@ -485,6 +556,7 @@ export const usePaperStore = create<PaperStoreState>((set, get) => ({
   },
 
   saveAllAction: async () => {
+    flushPendingEditorUpdate();
     const { projectPath, project, sectionContents, frontMatter, scratchpadContent, bibEntries } = get();
     if (!projectPath || !project) return false;
     try {
@@ -686,6 +758,7 @@ export const usePaperStore = create<PaperStoreState>((set, get) => ({
   },
 
   createSnapshotAction: async (label) => {
+    flushPendingEditorUpdate();
     const { projectPath, project, activeTarget, sectionContents } = get();
     if (!projectPath || !project || activeTarget === 'frontmatter') return;
     const sec = project.sections.find((s) => s.id === activeTarget);
@@ -906,7 +979,12 @@ export const usePaperStore = create<PaperStoreState>((set, get) => ({
     if (!projectPath) return null;
     const chosen = await fileService.pickFileDialog({
       title: 'Insert Figure Image',
-      filters: [{ name: 'Figure Images', extensions: ['png', 'jpg', 'jpeg', 'svg', 'pdf', 'eps', 'webp'] }],
+      filters: [
+        {
+          name: 'Figure Images',
+          extensions: ['png', 'jpg', 'jpeg', 'svg', 'pdf', 'eps', 'webp', 'tif', 'tiff', 'gif'],
+        },
+      ],
     });
     if (!chosen) return null;
 
@@ -914,34 +992,123 @@ export const usePaperStore = create<PaperStoreState>((set, get) => ({
     const safeName = rawName.replace(/[^a-zA-Z0-9._-]/g, '-');
     const targetPath = fileService.joinPath(projectPath, 'figures', safeName);
     await fileService.copyAssetToProject(chosen, targetPath);
-    await get().refreshFiguresAction();
 
-    const slug = safeName.replace(/\.[^.]+$/, '').toLowerCase().replace(/[^a-z0-9]+/g, '-');
-    return { relPath: `figures/${safeName}`, label: `fig:${slug}` };
+    const relPath = `figures/${safeName}`;
+    const label = figureLabelFromFileName(safeName);
+
+    if (fileService.isTauri()) {
+      await get().refreshFiguresAction();
+    } else {
+      const existing = get().projectFigures;
+      if (!existing.some((f) => f.relPath === relPath)) {
+        set({
+          projectFigures: [...existing, { name: safeName, relPath, label, title: safeName }],
+        });
+      }
+    }
+
+    return { relPath, label };
   },
 
   refreshFiguresAction: async () => {
     const { projectPath } = get();
     if (!projectPath || !fileService.isTauri()) return;
-    try {
-      const nodes = await fileService.readDirTree(fileService.joinPath(projectPath, 'figures'));
-      const map: Record<string, string> = {};
+
+    const rawFiles: { name: string; path: string; relPath: string }[] = [];
+    const flattenNodes = (nodes: fileService.BinderNode[], prefix: string) => {
       for (const n of nodes) {
-        if (n.is_dir) continue;
-        const ext = n.name.split('.').pop()?.toLowerCase() || '';
-        if (!['png', 'jpg', 'jpeg', 'svg', 'webp', 'gif'].includes(ext)) continue;
+        const rel = `${prefix}/${n.name}`;
+        if (n.is_dir) {
+          flattenNodes(n.children || [], rel);
+        } else {
+          rawFiles.push({ name: n.name, path: n.path, relPath: rel });
+        }
+      }
+    };
+
+    for (const folder of ['figures', 'figure']) {
+      try {
+        const nodes = await fileService.readDirTree(fileService.joinPath(projectPath, folder));
+        flattenNodes(nodes, folder);
+      } catch {
+        // ignore missing/empty figure folder
+      }
+    }
+
+    rawFiles.sort((a, b) => a.relPath.toLowerCase().localeCompare(b.relPath.toLowerCase()));
+    const extPriority = (name: string): number => {
+      const ext = name.split('.').pop()?.toLowerCase() || '';
+      if (ext === 'png') return 0;
+      if (ext === 'jpg' || ext === 'jpeg') return 1;
+      if (ext === 'webp' || ext === 'gif') return 2;
+      if (ext === 'pdf' || ext === 'eps') return 3;
+      if (ext === 'svg') return 4;
+      return 5;
+    };
+
+    const byLabel = new Map<string, { fig: ProjectFigureFile; raw: (typeof rawFiles)[number]; priority: number }>();
+    const previewTargets: { name: string; path: string; relPath: string }[] = [];
+
+    for (const f of rawFiles) {
+      const ext = f.name.split('.').pop()?.toLowerCase() || '';
+      if (!FIGURE_EXTS.has(ext)) continue;
+      if (PREVIEW_IMAGE_EXTS.has(ext)) {
+        previewTargets.push(f);
+      }
+      const label = figureLabelFromFileName(f.name);
+      const key = label.toLowerCase();
+      const prio = extPriority(f.name);
+      const prev = byLabel.get(key);
+      if (!prev || prio < prev.priority) {
+        byLabel.set(key, {
+          fig: {
+            name: f.name,
+            relPath: f.relPath,
+            label,
+            title: f.name,
+          },
+          raw: f,
+          priority: prio,
+        });
+      }
+    }
+
+    const figuresList = Array.from(byLabel.values()).map((v) => v.fig);
+
+    const prevFigures = get().projectFigures;
+    const figuresChanged =
+      figuresList.length !== prevFigures.length ||
+      figuresList.some(
+        (f, i) => f.relPath !== prevFigures[i]?.relPath || f.label !== prevFigures[i]?.label
+      );
+    if (figuresChanged) {
+      set({ projectFigures: figuresList });
+    }
+
+    const prevUrls = get().figureDataUrls;
+    const nextMap: Record<string, string> = {};
+    let urlsChanged = false;
+
+    for (const f of previewTargets) {
+      const existingUrl = prevUrls[f.relPath];
+      if (existingUrl) {
+        nextMap[f.relPath] = existingUrl;
+        if (!nextMap[f.name]) nextMap[f.name] = existingUrl;
+      } else {
         try {
-          const b64 = await fileService.readBinaryBase64(n.path);
-          const url = `data:${mimeForExt(n.name)};base64,${b64}`;
-          map[`figures/${n.name}`] = url;
-          map[n.name] = url;
+          const b64 = await fileService.readBinaryBase64(f.path);
+          const url = `data:${mimeForExt(f.name)};base64,${b64}`;
+          nextMap[f.relPath] = url;
+          if (!nextMap[f.name]) nextMap[f.name] = url;
+          urlsChanged = true;
         } catch {
           // skip unreadable image
         }
       }
-      set({ figureDataUrls: map });
-    } catch {
-      // ignore if figures/ empty
+    }
+
+    if (urlsChanged || Object.keys(nextMap).length !== Object.keys(prevUrls).length) {
+      set({ figureDataUrls: nextMap });
     }
   },
 
@@ -955,6 +1122,7 @@ export const usePaperStore = create<PaperStoreState>((set, get) => ({
   },
 
   compilePdfAction: async (openPdfPane = true) => {
+    flushPendingEditorUpdate();
     const {
       projectPath,
       project,
@@ -964,6 +1132,7 @@ export const usePaperStore = create<PaperStoreState>((set, get) => ({
       bibEntries,
       citationStyle,
       texEngine,
+      projectFigures,
     } = get();
     if (!projectPath || !project) {
       get().setStatusMessage('Open a paper folder before compiling LaTeX.');
@@ -984,6 +1153,7 @@ export const usePaperStore = create<PaperStoreState>((set, get) => ({
         bibEntries,
         citationStyle,
         pruneUnusedBib: true,
+        projectFigures,
       });
 
       const result = await latexService.compileLatexBuild({
@@ -1019,6 +1189,7 @@ export const usePaperStore = create<PaperStoreState>((set, get) => ({
   },
 
   openInTexstudioAction: async () => {
+    flushPendingEditorUpdate();
     const {
       projectPath,
       project,
@@ -1028,6 +1199,7 @@ export const usePaperStore = create<PaperStoreState>((set, get) => ({
       bibEntries,
       citationStyle,
       lastBuildTexPath,
+      projectFigures,
     } = get();
     if (!projectPath || !project) return;
     let texPath = lastBuildTexPath;
@@ -1040,6 +1212,7 @@ export const usePaperStore = create<PaperStoreState>((set, get) => ({
         manifest: activeManifest,
         bibEntries,
         citationStyle,
+        projectFigures,
       });
       texPath = assembled.texPath;
       set({ lastBuildTexPath: texPath });

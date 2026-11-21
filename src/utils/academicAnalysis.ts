@@ -1,7 +1,8 @@
 import type { BibEntry } from '../types/citation';
-import type { PaperFrontMatter, PaperSection } from '../types/paper';
+import type { PaperFrontMatter, PaperSection, ProjectFigureFile } from '../types/paper';
 import { auditCitations } from '../citations/bibtex';
-import { countAcademicWords, indexPaperElements } from './paperOutline';
+import { findFolderFigure } from '../latex/markdownToLatex';
+import { countAcademicWords, figureLabelFromFileName, indexPaperElements } from './paperOutline';
 
 export interface AcronymCheckItem {
   acronym: string;
@@ -96,8 +97,9 @@ export function runPreFlightCheck(params: {
   sections: PaperSection[];
   sectionContents: Record<string, string>;
   bibEntries: BibEntry[];
+  projectFigures?: ProjectFigureFile[];
 }): PreFlightReport {
-  const { frontMatter, sections, sectionContents, bibEntries } = params;
+  const { frontMatter, sections, sectionContents, bibEntries, projectFigures = [] } = params;
   const issues: PreFlightIssue[] = [];
 
   // 1. Front matter completeness
@@ -152,7 +154,7 @@ export function runPreFlightCheck(params: {
       });
     }
 
-    const todoMatches = md.match(/\b(?:TODO|FIXME|TBD)\b|\[(?:CITE|CITATION NEEDED|REF|INSERT[^\]]*)\]/gi);
+    const todoMatches = md.match(/\b(?:TODO|FIXME|TBD)\b|\[(?:CITE|CITATION NEEDED|REF|INSERT[^[\]\n]*)\]/gi);
     if (todoMatches && todoMatches.length > 0) {
       issues.push({
         severity: 'warning',
@@ -184,17 +186,46 @@ export function runPreFlightCheck(params: {
   }
 
   // 4. Cross-references audit
-  const elements = indexPaperElements(sectionPayload);
-  const validLabels = new Set(elements.map((e) => e.label));
+  const elements = indexPaperElements(sectionPayload, projectFigures);
+  const validLabels = new Set<string>();
+  for (const e of elements) {
+    validLabels.add(e.label);
+    validLabels.add(e.label.toLowerCase());
+    if (e.kind === 'figure') {
+      if (e.label.startsWith('fig:')) {
+        validLabels.add(figureLabelFromFileName(e.label.slice(4)));
+      }
+      if (e.imagePath) {
+        validLabels.add(figureLabelFromFileName(e.imagePath));
+      }
+    }
+  }
   const referencedLabels = new Set<string>();
+  const referencedFolderRelPaths = new Set<string>();
 
   for (const sec of sectionPayload) {
-    const refRe = /(?<![a-zA-Z0-9_])@((?:fig|tbl|eq|sec):[a-zA-Z0-9_.-]+)/g;
+    const refRe = /(?<![a-zA-Z0-9_])@((?:fig|tbl|eq|sec):[a-zA-Z0-9_-]+(?:\.[a-zA-Z0-9_-]+)*)/g;
     let rm: RegExpExecArray | null;
     while ((rm = refRe.exec(sec.markdown)) !== null) {
       const label = rm[1];
+      const normFigLbl = label.startsWith('fig:') ? figureLabelFromFileName(label.slice(4)) : '';
       referencedLabels.add(label);
-      if (!validLabels.has(label)) {
+      referencedLabels.add(label.toLowerCase());
+      if (normFigLbl) referencedLabels.add(normFigLbl);
+      const matchedFolderFig =
+        label.startsWith('fig:') && projectFigures.length > 0
+          ? findFolderFigure(label, projectFigures)
+          : undefined;
+      if (matchedFolderFig) {
+        referencedLabels.add(matchedFolderFig.label.toLowerCase());
+        referencedFolderRelPaths.add(matchedFolderFig.relPath);
+      }
+      const isValid =
+        validLabels.has(label) ||
+        validLabels.has(label.toLowerCase()) ||
+        (normFigLbl !== '' && validLabels.has(normFigLbl)) ||
+        Boolean(matchedFolderFig);
+      if (!isValid) {
         issues.push({
           severity: 'error',
           category: 'crossref',
@@ -205,9 +236,18 @@ export function runPreFlightCheck(params: {
     }
   }
 
-  // Flag unreferenced figures/tables
+  // Flag unreferenced figures/tables (embedded in manuscript)
   for (const el of elements) {
-    if ((el.kind === 'figure' || el.kind === 'table') && !referencedLabels.has(el.label)) {
+    const elIsRef =
+      referencedLabels.has(el.label) ||
+      referencedLabels.has(el.label.toLowerCase()) ||
+      (el.kind === 'figure' &&
+        el.imagePath !== undefined &&
+        referencedLabels.has(figureLabelFromFileName(el.imagePath)));
+    if (
+      (el.kind === 'figure' && el.sectionId !== 'figures-folder' && !elIsRef) ||
+      (el.kind === 'table' && !elIsRef)
+    ) {
       issues.push({
         severity: 'warning',
         category: 'crossref',
@@ -245,7 +285,13 @@ export function runPreFlightCheck(params: {
     issues,
     acronyms,
     totalWords,
-    figureCount: elements.filter((e) => e.kind === 'figure').length,
+    figureCount: elements.filter(
+      (e) =>
+        e.kind === 'figure' &&
+        (e.sectionId !== 'figures-folder' ||
+          referencedLabels.has(e.label) ||
+          (e.imagePath ? referencedFolderRelPaths.has(e.imagePath) : false))
+    ).length,
     tableCount: elements.filter((e) => e.kind === 'table').length,
     equationCount: elements.filter((e) => e.kind === 'equation').length,
     citationCount: citeAudit.totalCitedKeys,

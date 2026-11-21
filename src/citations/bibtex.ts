@@ -208,7 +208,7 @@ export function extractCitedKeysFromMarkdown(rawMarkdown: string): string[] {
   const keys: string[] = [];
 
   // 1. Bracketed citations: [@a; @b]
-  const bracketRe = /\[([^\]]*@[a-zA-Z0-9_.:-]+[^\]]*)\]/g;
+  const bracketRe = /\[([^[\]\n]*@[a-zA-Z0-9_.:-]+[^[\]\n]*)\]/g;
   let m: RegExpExecArray | null;
   while ((m = bracketRe.exec(markdown)) !== null) {
     const inner = m[1];

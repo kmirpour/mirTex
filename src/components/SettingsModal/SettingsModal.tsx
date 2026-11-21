@@ -1,4 +1,5 @@
 import { RefreshCw, Settings, X } from 'lucide-react';
+import { useShallow } from 'zustand/react/shallow';
 import { usePaperStore } from '../../stores/paperStore';
 import { THEMES } from '../../services/themes';
 import {
@@ -12,9 +13,41 @@ import {
 import type { CitationStyle } from '../../types/citation';
 
 export function SettingsModal() {
-  const s = usePaperStore();
+  const settingsOpen = usePaperStore((st) => st.settingsOpen);
+  if (!settingsOpen) return null;
+  return <SettingsModalContent />;
+}
 
-  if (!s.settingsOpen) return null;
+function SettingsModalContent() {
+  const s = usePaperStore(
+    useShallow((st) => ({
+      setSettingsOpen: st.setSettingsOpen,
+      theme: st.theme,
+      setTheme: st.setTheme,
+      fontFamily: st.fontFamily,
+      setFontFamily: st.setFontFamily,
+      fontSize: st.fontSize,
+      setFontSize: st.setFontSize,
+      lineHeight: st.lineHeight,
+      setLineHeight: st.setLineHeight,
+      lineWidth: st.lineWidth,
+      setLineWidth: st.setLineWidth,
+      autoSaveEnabled: st.autoSaveEnabled,
+      setAutoSaveEnabled: st.setAutoSaveEnabled,
+      smartQuotes: st.smartQuotes,
+      setSmartQuotes: st.setSmartQuotes,
+      citationStyle: st.citationStyle,
+      setCitationStyle: st.setCitationStyle,
+      texEngine: st.texEngine,
+      setTexEngine: st.setTexEngine,
+      zoteroPort: st.zoteroPort,
+      setZoteroPort: st.setZoteroPort,
+      texToolchain: st.texToolchain,
+      zoteroStatus: st.zoteroStatus,
+      detectToolchainAction: st.detectToolchainAction,
+      pingZoteroAction: st.pingZoteroAction,
+    }))
+  );
 
   return (
     <div className="modal-backdrop">
